@@ -4,6 +4,7 @@ import '../theme/app_theme.dart';
 import '../services/supabase_service.dart';
 import '../services/user_service.dart';
 import 'home_screen.dart';
+import 'onboarding_screen.dart';
 
 class RegisterContactsScreen extends StatefulWidget {
   const RegisterContactsScreen({super.key});
@@ -85,7 +86,7 @@ class _RegisterContactsScreenState extends State<RegisterContactsScreen> {
     if (mounted) {
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
+        MaterialPageRoute(builder: (_) => const OnboardingScreen()),
       );
     }
   }
@@ -102,60 +103,64 @@ class _RegisterContactsScreenState extends State<RegisterContactsScreen> {
           ),
         ),
         child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(30),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 20),
-                Text(
-                  'Trusted Contacts',
-                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: AppTheme.textPrimary),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  'Who should be notified in an emergency?',
-                  style: TextStyle(fontSize: 16, color: AppTheme.textSecondary),
-                ),
-                const SizedBox(height: 30),
-                
-                // Add Contact Form
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.05),
-                    borderRadius: BorderRadius.circular(18),
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.all(30),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(height: 20),
+                  Text(
+                    'Trusted Contacts',
+                    style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: AppTheme.textPrimary),
                   ),
-                  child: Column(
-                    children: [
-                      _buildMiniField('Name', _nameController, Icons.person),
-                      const SizedBox(height: 12),
-                      _buildMiniField('Phone', _phoneController, Icons.phone),
-                      const SizedBox(height: 12),
-                      _buildMiniField('Relation', _relationController, Icons.family_restroom),
-                      const SizedBox(height: 16),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          onPressed: _addContact,
-                          icon: const Icon(Icons.add),
-                          label: const Text('Add Contact'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppTheme.primaryPurple,
-                            side: BorderSide(color: AppTheme.primaryPurple),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Who should be notified in an emergency?',
+                    style: TextStyle(fontSize: 16, color: AppTheme.textSecondary),
+                  ),
+                  const SizedBox(height: 30),
+                  
+                  // Add Contact Form
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.05),
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: Column(
+                      children: [
+                        _buildMiniField('Name', _nameController, Icons.person),
+                        const SizedBox(height: 12),
+                        _buildMiniField('Phone', _phoneController, Icons.phone),
+                        const SizedBox(height: 12),
+                        _buildMiniField('Relation', _relationController, Icons.family_restroom),
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: _addContact,
+                            icon: const Icon(Icons.add),
+                            label: const Text('Add Contact'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppTheme.primaryPurple,
+                              side: BorderSide(color: AppTheme.primaryPurple),
+                            ),
                           ),
-                        ),
-                      )
-                    ],
+                        )
+                      ],
+                    ),
                   ),
-                ),
-                
-                const SizedBox(height: 30),
-                Text('Added Contacts (${_contacts.length})', style: const TextStyle(color: Colors.white70)),
-                const SizedBox(height: 10),
-                
-                Expanded(
-                  child: ListView.builder(
+                  
+                  const SizedBox(height: 30),
+                  Text('Added Contacts (${_contacts.length})', style: const TextStyle(color: Colors.white70)),
+                  const SizedBox(height: 10),
+                  
+                  // Use shrinkWrap for the list when inside a ScrollView
+                  ListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
                     itemCount: _contacts.length,
                     itemBuilder: (context, index) {
                       final c = _contacts[index];
@@ -173,24 +178,26 @@ class _RegisterContactsScreenState extends State<RegisterContactsScreen> {
                       );
                     },
                   ),
-                ),
-                
-                SizedBox(
-                  width: double.infinity,
-                  height: 60,
-                  child: ElevatedButton(
-                    onPressed: _isSaving ? null : _completeSignup,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.primaryPurple,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                  
+                  const SizedBox(height: 20),
+                  
+                  SizedBox(
+                    width: double.infinity,
+                    height: 60,
+                    child: ElevatedButton(
+                      onPressed: _isSaving ? null : _completeSignup,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primaryPurple,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                      ),
+                      child: _isSaving 
+                        ? const CircularProgressIndicator(color: Colors.white)
+                        : const Text('Complete Sign Up'),
                     ),
-                    child: _isSaving 
-                      ? const CircularProgressIndicator(color: Colors.white)
-                      : const Text('Complete Sign Up'),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

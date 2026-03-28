@@ -34,6 +34,17 @@ class SupabaseService {
         data['password'] = password;
       }
 
+      // Check if phone number is already registered under a different email
+      final existingPhone = await _supabase
+          .from('users')
+          .select('email')
+          .eq('phone', phone)
+          .maybeSingle();
+
+      if (existingPhone != null && existingPhone['email'] != email) {
+        return 'This phone number is already registered with another account.';
+      }
+
       await _supabase.from('users').upsert(data, onConflict: 'email');
       debugPrint('Supabase: Profile synced for $email');
       return null; // success
@@ -246,6 +257,41 @@ class SupabaseService {
       }).eq('email', email);
     } catch (e) {
       debugPrint('Supabase Error (updateUserLocation): $e');
+    }
+  }
+
+  // 7. Auto FIR Submission
+  static Future<Map<String, dynamic>> submitFIR({
+    required String userEmail,
+    required String crimeType,
+    required String dateTime,
+    required String location,
+    required String incidentDescription,
+    required String accusedDescription,
+    required String witnesses,
+    required String generatedFir,
+    required List<String> evidenceIds,
+  }) async {
+    try {
+      final response = await _supabase.from('firs').insert({
+        'user_email': userEmail,
+        'crime_type': crimeType,
+        'date_time': dateTime,
+        'location': location,
+        'incident_description': incidentDescription,
+        'accused_description': accusedDescription,
+        'witnesses': witnesses,
+        'generated_fir': generatedFir,
+        'evidence_ids': evidenceIds, // the local or remote evidence identifiers
+        'status': 'pending', // for admin to review
+        'created_at': DateTime.now().toIso8601String(),
+      }).select();
+      
+      debugPrint('Supabase: FIR submitted for $userEmail');
+      return {'success': true, 'data': response};
+    } catch (e) {
+      debugPrint('Supabase Error (submitFIR): $e');
+      return {'success': false, 'error': e.toString()};
     }
   }
 }

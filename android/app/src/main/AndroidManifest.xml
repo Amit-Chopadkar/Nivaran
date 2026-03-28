@@ -34,7 +34,7 @@
     <uses-permission android:name="android.permission.VIBRATE" />
 
     <application
-        android:label="safeher"
+        android:label="NIVARAN"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true"
@@ -89,6 +89,28 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
+        </receiver>
+
+        <!-- ── SOS Notification Action Receiver (works app-closed) ──────── -->
+        <receiver
+            android:name=".SOSActionReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.safeher.safeher.SOS_NOTIFICATION_ACTION" />
+            </intent-filter>
+        </receiver>
+
+        <!-- ── SOS Home Screen Widget ─────────────────────────────────── -->
+        <receiver
+            android:name=".SOSWidgetProvider"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.safeher.safeher.WIDGET_SOS_ACTION" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/sos_widget_info" />
         </receiver>
 
         <!-- ── File Provider ──────────────────────────────────────────── -->

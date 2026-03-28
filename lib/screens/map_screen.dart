@@ -74,17 +74,16 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
               },
             ),
             children: [
-              // CartoDB Voyager — same visual style as GraphHopper
+              // OpenStreetMap Standard - highly detailed map with cities marked
               TileLayer(
                 urlTemplate:
-                    'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-                subdomains: const ['a', 'b', 'c', 'd'],
+                    'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'com.safeher.safeher',
               ),
               RichAttributionWidget(
                 attributions: [
                   TextSourceAttribution(
-                    '© OpenStreetMap | © CARTO',
+                    '© OpenStreetMap contributors',
                     onTap: () => _launchOSM(),
                   ),
                 ],
@@ -92,14 +91,30 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
               // Crime zones (Red Zones) from SafetyService
               if (_showHeatmap)
+                PolygonLayer(
+                  polygons: hotspots
+                      .where((h) => h.boundary != null)
+                      .map((h) => Polygon(
+                              points: h.boundary!,
+                            color: AppTheme.dangerRed.withOpacity(0.5),
+                            borderStrokeWidth: 3,
+                            borderColor: AppTheme.dangerRed,
+                            isFilled: true,
+                          ))
+                      .toList(),
+                ),
+
+              if (_showHeatmap)
                 CircleLayer(
-                  circles: hotspots.map((hotspot) {
+                  circles: hotspots
+                      .where((h) => h.boundary == null)
+                      .map((hotspot) {
                     return CircleMarker(
                       point: LatLng(hotspot.lat, hotspot.lng),
                       radius: 400, // 400m radius matching backend
                       useRadiusInMeter: true,
-                      color: AppTheme.dangerRed.withValues(alpha: 0.3),
-                      borderColor: AppTheme.dangerRed.withValues(alpha: 0.5),
+                      color: AppTheme.dangerRed.withOpacity(0.4),
+                      borderColor: AppTheme.dangerRed.withOpacity(0.6),
                       borderStrokeWidth: 2,
                     );
                   }).toList(),
@@ -385,6 +400,20 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                     _mapController.move(
                       LatLng(service.currentLat, service.currentLng),
                       15,
+                    );
+                  },
+                ),
+                const SizedBox(height: 8),
+                _MapButton(
+                  icon: Icons.location_city_rounded,
+                  onTap: () {
+                    // Quick jump to Nagpur (Sitabuldi) for testing geofencing
+                    _mapController.move(const LatLng(21.1458, 79.0882), 14);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('📍 Centered on Nagpur Red Zones'),
+                        duration: Duration(seconds: 1),
+                      ),
                     );
                   },
                 ),

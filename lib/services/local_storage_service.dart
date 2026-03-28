@@ -7,6 +7,7 @@ class LocalStorageService {
   static const String evidenceBoxName = 'evidence_vault';
   static const String processedBoxName = 'mesh_processed';
   static const String pendingRelayBoxName = 'mesh_pending';
+  static const String settingsBoxName = 'app_settings';
 
   static Future<void> init() async {
     await Hive.initFlutter();
@@ -16,6 +17,7 @@ class LocalStorageService {
     await Hive.openBox<Evidence>(evidenceBoxName);
     await Hive.openBox<bool>(processedBoxName);
     await Hive.openBox<MeshMessage>(pendingRelayBoxName);
+    await Hive.openBox(settingsBoxName);
   }
 
   static Box<MeshMessage> get chatBox => Hive.box<MeshMessage>(chatBoxName);
@@ -69,5 +71,13 @@ class LocalStorageService {
 
   static Future<void> removePendingRelay(String messageId) async {
     await pendingBox.delete(messageId);
+  }
+
+  static Box get settingsBox => Hive.box(settingsBoxName);
+
+  static bool get isOnboardingCompleted => settingsBox.get('onboarding_completed', defaultValue: false);
+
+  static Future<void> setOnboardingCompleted(bool value) async {
+    await settingsBox.put('onboarding_completed', value);
   }
 }

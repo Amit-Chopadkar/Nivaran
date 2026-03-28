@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:io' show Platform;
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'api_config.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
@@ -12,6 +14,7 @@ import 'supabase_service.dart';
 import 'package:dio/dio.dart' as dio;
 import 'package:record/record.dart';
 import 'package:path_provider/path_provider.dart';
+import 'weather_service.dart';
 import 'package:telephony/telephony.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
@@ -22,8 +25,8 @@ class SafetyService extends ChangeNotifier {
   static late SafetyService instance;
 
   // Current user location (simulated for demo)
-  double _currentLat = 19.9975;
-  double _currentLng = 73.7898;
+  double _currentLat = 0.0;
+  double _currentLng = 0.0;
   bool _isSOSActive = false;
   bool _isTripActive = false;
   bool _isFakeCallActive = false;
@@ -110,6 +113,18 @@ class SafetyService extends ChangeNotifier {
   String? _userEmail;
   String? _currentSOSId; 
   DateTime? _lastDbLocationUpdate;
+  WeatherService? _weatherService;
+  DateTime? _lastWeatherUpdate;
+
+  void updateWeatherService(WeatherService service) {
+    if (_weatherService == service) return;
+    _weatherService = service;
+    // Fetch immediately upon link if coordinates are available and no weather yet
+    if (_weatherService != null && _weatherService!.currentWeather == null && !_weatherService!.isLoading) {
+      _weatherService!.fetchWeather(_currentLat, _currentLng);
+      _lastWeatherUpdate = DateTime.now();
+    }
+  }
   void updateUserContext(String name, String email) {
     if (_userEmail == email && (_userName == name || name.isEmpty)) return;
     if (name.isNotEmpty) _userName = name;
@@ -281,18 +296,16 @@ class SafetyService extends ChangeNotifier {
       }
 
       // Get initial position immediately
-      final pos = await Geolocator.getCurrentPosition();
-      _currentLat = pos.latitude;
-      _currentLng = pos.longitude;
-      _checkDangerZones();
-      _checkPathDivergence();
-      notifyListeners();
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high)
+      );
+      updateLocation(pos.latitude, pos.longitude);
 
       // Then stream continuous updates
       _positionStream = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.best,
-          distanceFilter: 2,
+          accuracy: LocationAccuracy.high, // 'best' sometimes hangs indoors
+          distanceFilter: 10, // 10 meters is enough for safety triggers
         ),
       ).listen((Position position) {
         // Use updateLocation to trigger all side effects (risk, divergence, live tracking)
@@ -475,25 +488,6 @@ class SafetyService extends ChangeNotifier {
     }
   }
 
-  Future<void> fetchLiveLocation() async {
-    try {
-      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) return;
-
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) return;
-      }
-      
-      if (permission == LocationPermission.deniedForever) return;
-
-      final position = await Geolocator.getCurrentPosition();
-      updateLocation(position.latitude, position.longitude);
-    } catch (e) {
-      debugPrint('Error fetching location: $e');
-    }
-  }
 
   void _updateRiskAssessment() {
     _currentRiskAssessment = RiskAssessment.calculate(
@@ -501,6 +495,18 @@ class SafetyService extends ChangeNotifier {
       lng: _currentLng,
       time: DateTime.now(),
     );
+
+    // Update weather if needed
+    if (_weatherService != null) {
+      final now = DateTime.now();
+      // If never updated or > 15 mins since success
+      if (_lastWeatherUpdate == null || now.difference(_lastWeatherUpdate!).inMinutes >= 15) {
+        if (_currentLat != 0.0) { // Essential dynamic check
+          _weatherService!.fetchWeather(_currentLat, _currentLng);
+          _lastWeatherUpdate = now;
+        }
+      }
+    }
     
     double baseScore = _currentRiskAssessment!.overallScore;
     
@@ -527,13 +533,11 @@ class SafetyService extends ChangeNotifier {
   /// with the local risk score. Falls back silently if the service is unavailable.
   Future<void> _fetchMLZonePrediction(double localScore) async {
     try {
-      final baseUrl = (kIsWeb)
-          ? 'http://localhost:3000'
-          : (Platform.isAndroid ? 'http://10.0.2.2:3000' : 'http://127.0.0.1:3000');
+      final baseUrl = ApiConfig.baseUrl;
 
       final dioClient = dio.Dio(dio.BaseOptions(
-        connectTimeout: const Duration(seconds: 3),
-        receiveTimeout: const Duration(seconds: 3),
+        connectTimeout: const Duration(seconds: 60),
+        receiveTimeout: const Duration(seconds: 60),
       ));
 
       final response = await dioClient.post(
@@ -739,6 +743,8 @@ class SafetyService extends ChangeNotifier {
     });
   }
 
+  Timer? _sosRecordingTimer;
+
   Future<void> _startSOSRecording() async {
     try {
       if (await _audioRecorder.hasPermission()) {
@@ -748,8 +754,17 @@ class SafetyService extends ChangeNotifier {
           const RecordConfig(encoder: AudioEncoder.aacLc),
           path: path,
         );
-        _sosLog.insert(0, '🎙️ Audio recording started');
+        _sosLog.insert(0, '🎙️ Audio recording started (Auto-stop in 20s)');
         notifyListeners();
+
+        // Auto-stop after 20 seconds
+        _sosRecordingTimer?.cancel();
+        _sosRecordingTimer = Timer(const Duration(seconds: 20), () {
+          if (_isSOSActive) {
+            _sosLog.insert(0, '⏱️ 20s limit reached, saving recording...');
+            _stopSOSRecordingAndUpload();
+          }
+        });
       } else {
         _sosLog.insert(0, '⚠️ Audio recording permission denied');
         notifyListeners();
@@ -800,15 +815,11 @@ class SafetyService extends ChangeNotifier {
 
   // Trip Monitoring
   final dio.Dio _dio = dio.Dio(dio.BaseOptions(
-    connectTimeout: const Duration(seconds: 30),
-    receiveTimeout: const Duration(seconds: 30),
+    connectTimeout: const Duration(seconds: 60),
+    receiveTimeout: const Duration(seconds: 60),
   ));
   
-  static String get _backendUrl {
-    if (kIsWeb) return 'http://localhost:3000';
-    // Using localhost with 'adb reverse tcp:3000 tcp:3000' for physical devices.
-    return 'http://localhost:3000';
-  }
+  static String get _backendUrl => ApiConfig.baseUrl;
 
 
   Future<String?> startTrip(String destination, {String? origin}) async {
@@ -1002,6 +1013,8 @@ class SafetyService extends ChangeNotifier {
     _updateRiskAssessment();
     _checkPathDivergence();
     
+    // Removed redundant weather fetch call that caused race condition
+    
     // Push live tracking update if SOS is active
     if (_isSOSActive && _currentSOSId != null) {
       SupabaseService.updateSOSLocation(
@@ -1025,6 +1038,24 @@ class SafetyService extends ChangeNotifier {
     }
     
     notifyListeners();
+  }
+
+  Future<void> fetchLiveLocation() async {
+    try {
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 10),
+        ),
+      );
+      updateLocation(pos.latitude, pos.longitude);
+      // Ensure weather is also updated immediately
+      if (_weatherService != null) {
+        _weatherService!.fetchWeather(pos.latitude, pos.longitude);
+      }
+    } catch (e) {
+      debugPrint('Live location update error: $e');
+    }
   }
 
   /// Searches for a place by name within the predefined SafePlaces.

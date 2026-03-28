@@ -1,18 +1,17 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'api_config.dart';
 import 'wallet_service.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'dart:io' show Platform;
 
 class AuthService extends ChangeNotifier {
   final Dio _dio = Dio(BaseOptions(
-    connectTimeout: const Duration(seconds: 20),
-    receiveTimeout: const Duration(seconds: 20),
+    connectTimeout: const Duration(seconds: 60),
+    receiveTimeout: const Duration(seconds: 60),
   ));
-  static String get _baseUrl {
-    if (kIsWeb) return 'http://localhost:3000/api/auth';
-    // Using localhost on Android with 'adb reverse tcp:3000 tcp:3000'
-    return 'http://localhost:3000/api/auth';
-  }
+  
+  static String get _baseUrl => ApiConfig.authUrl;
   final WalletService _walletService = WalletService();
   final _storage = const FlutterSecureStorage(
     aOptions: AndroidOptions(),

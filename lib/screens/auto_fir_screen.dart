@@ -1,7 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import '../services/ai_legal_service.dart';
-
+import '../services/evidence_service.dart';
+import '../services/supabase_service.dart';
+import '../services/auth_service.dart';
+import '../models/evidence.dart';
+import 'fir_history_screen.dart';
+import 'package:intl/intl.dart';
 class AutoFirScreen extends StatefulWidget {
   const AutoFirScreen({super.key});
 
@@ -17,7 +23,11 @@ class _AutoFirScreenState extends State<AutoFirScreen> {
   final _dateTimeController = TextEditingController();
   String _selectedCrime = 'Harassment';
   bool _isLoading = false;
+  bool _isSubmitting = false;
   String? _aiResponse;
+  
+  // Attached Evidence List
+  final List<Evidence> _attachedEvidence = [];
 
   final _crimeTypes = ['Harassment', 'Assault', 'Theft', 'Stalking', 'Molestation', 'Domestic Violence', 'Cybercrime', 'Other'];
   final _crimeIcons = {
@@ -87,6 +97,19 @@ class _AutoFirScreenState extends State<AutoFirScreen> {
               ),
               onPressed: () => Navigator.pop(context),
             ),
+            actions: [
+              IconButton(
+                icon: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), shape: BoxShape.circle),
+                  child: const Icon(Icons.history_rounded, color: Colors.white, size: 18),
+                ),
+                onPressed: () {
+                  Navigator.push(context, MaterialPageRoute(builder: (context) => const FIRHistoryScreen()));
+                },
+              ),
+              const SizedBox(width: 8),
+            ],
             flexibleSpace: FlexibleSpaceBar(
               background: Container(
                 decoration: const BoxDecoration(
@@ -179,18 +202,207 @@ class _AutoFirScreenState extends State<AutoFirScreen> {
                 _buildSectionHeader('👥', 'Witnesses'),
                 const SizedBox(height: 10),
                 _buildInputField(_witnessController, 'Names or details of any witnesses', Icons.group_outlined, maxLines: 1),
+                const SizedBox(height: 28),
+                
+                // Evidence Attachment
+                _buildSectionHeader('📁', 'Attach Evidence'),
+                const SizedBox(height: 10),
+                _buildEvidenceSelector(),
                 const SizedBox(height: 32),
 
                 // Submit
                 _buildGradientButton(),
                 const SizedBox(height: 28),
 
-                if (_aiResponse != null) _buildResponseCard(_aiResponse!),
+                if (_aiResponse != null) ...[
+                  _buildResponseCard(_aiResponse!),
+                  const SizedBox(height: 20),
+                  _buildSubmitFIRButton(),
+                ],
                 const SizedBox(height: 40),
               ]),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Future<void> _submitFIR() async {
+    if (_aiResponse == null) return;
+    
+    setState(() => _isSubmitting = true);
+    
+    final authService = Provider.of<AuthService>(context, listen: false);
+    final userEmail = authService.currentUserEmail ?? 'unknown_user_test';
+    
+    final result = await SupabaseService.submitFIR(
+      userEmail: userEmail,
+      crimeType: _selectedCrime,
+      dateTime: _dateTimeController.text,
+      location: _locationController.text,
+      incidentDescription: _incidentController.text,
+      accusedDescription: _accusedController.text,
+      witnesses: _witnessController.text,
+      generatedFir: _aiResponse!,
+      evidenceIds: _attachedEvidence.map((e) => e.id).toList(),
+    );
+    
+    if (mounted) {
+      setState(() => _isSubmitting = false);
+      if (result['success']) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('FIR Submitted successfully to the police network.', style: GoogleFonts.nunito(fontWeight: FontWeight.w600)),
+            backgroundColor: const Color(0xFF10B981),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        setState(() {
+          _aiResponse = null;
+          _incidentController.clear();
+          _accusedController.clear();
+          _witnessController.clear();
+          _locationController.clear();
+          _dateTimeController.clear();
+          _attachedEvidence.clear();
+        });
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to submit: ${result['error']}'),
+            backgroundColor: const Color(0xFFEF4444),
+          ),
+        );
+      }
+    }
+  }
+
+  void _openEvidenceVaultSelector() {
+    final evidenceService = Provider.of<EvidenceService>(context, listen: false);
+    final availableEvidence = evidenceService.evidenceList;
+    
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) {
+        return Container(
+          padding: const EdgeInsets.all(20),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Select from Evidence Vault', style: GoogleFonts.nunito(fontSize: 18, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 16),
+              if (availableEvidence.isEmpty) ...[
+                const Padding(
+                  padding: EdgeInsets.all(20),
+                  child: Text('No evidence available in your vault.'),
+                ),
+              ] else ...[
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: availableEvidence.length,
+                    itemBuilder: (context, index) {
+                      final item = availableEvidence[index];
+                      final isSelected = _attachedEvidence.any((e) => e.id == item.id);
+                      IconData icon = item.type == 'Audio' ? Icons.mic : (item.type == 'Video' ? Icons.videocam : Icons.image);
+                      return ListTile(
+                        leading: Icon(icon, color: const Color(0xFFD97706)),
+                        title: Text('${item.type} Recording', style: GoogleFonts.nunito(fontWeight: FontWeight.w700)),
+                        subtitle: Text(DateFormat('MMM d, h:mm a').format(item.timestamp), style: GoogleFonts.nunito(fontSize: 12)),
+                        trailing: Checkbox(
+                          value: isSelected,
+                          activeColor: const Color(0xFFD97706),
+                          onChanged: (val) {
+                            setState(() {
+                              if (val == true) {
+                                _attachedEvidence.add(item);
+                              } else {
+                                _attachedEvidence.removeWhere((e) => e.id == item.id);
+                              }
+                            });
+                            Navigator.pop(context); // Close and refresh selection
+                            _openEvidenceVaultSelector(); // Re-open updated
+                          },
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: Text('Done', style: GoogleFonts.nunito(fontSize: 16, fontWeight: FontWeight.w700, color: const Color(0xFFD97706))),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildEvidenceSelector() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (_attachedEvidence.isNotEmpty)
+          Wrap(
+            spacing: 8,
+            children: _attachedEvidence.map((e) => Chip(
+              label: Text('${e.type} Attachment', style: GoogleFonts.nunito(fontSize: 12, fontWeight: FontWeight.w700, color: const Color(0xFFD97706))),
+              deleteIcon: const Icon(Icons.close, size: 16),
+              onDeleted: () => setState(() => _attachedEvidence.removeWhere((item) => item.id == e.id)),
+              backgroundColor: const Color(0xFFFEF3C7),
+              side: const BorderSide(color: Color(0xFFFDE68A)),
+            )).toList(),
+          ),
+        const SizedBox(height: 10),
+        OutlinedButton.icon(
+          onPressed: _openEvidenceVaultSelector,
+          icon: const Icon(Icons.attach_file_rounded, size: 18, color: Color(0xFF64748B)),
+          label: Text('Attach from Vault', style: GoogleFonts.nunito(color: const Color(0xFF64748B), fontWeight: FontWeight.w700)),
+          style: OutlinedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            side: const BorderSide(color: Color(0xFFE2E8F0)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSubmitFIRButton() {
+    return GestureDetector(
+      onTap: _isSubmitting ? null : _submitFIR,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        width: double.infinity,
+        height: 58,
+        decoration: BoxDecoration(
+          color: const Color(0xFF10B981), // Emerald green for final submission
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [BoxShadow(color: const Color(0xFF10B981).withValues(alpha: 0.4), blurRadius: 20, offset: const Offset(0, 8))],
+        ),
+        child: Center(
+          child: _isSubmitting
+              ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+                    const SizedBox(width: 10),
+                    Text('Submit FIR to Network', style: GoogleFonts.nunito(fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: 0.3)),
+                  ],
+                ),
+        ),
       ),
     );
   }

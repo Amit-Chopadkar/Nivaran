@@ -1,6 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
-import 'dart:io' show Platform;
+import 'api_config.dart';
 
 class BlockchainService extends ChangeNotifier {
   final Dio _dio = Dio(BaseOptions(
@@ -8,12 +8,7 @@ class BlockchainService extends ChangeNotifier {
     receiveTimeout: const Duration(seconds: 60),
   ));
   
-  // Use 127.0.0.1 in combination with `adb reverse tcp:3000 tcp:3000`
-  static String get _baseUrl {
-    if (kIsWeb) return 'http://localhost:3000/api/blockchain';
-    if (Platform.isAndroid) return 'http://10.0.2.2:3000/api/blockchain';
-    return 'http://127.0.0.1:3000/api/blockchain';
-  }
+  static String get _baseUrl => ApiConfig.blockchainUrl;
   
   bool _isVerifying = false;
   String? _lastTxHash;

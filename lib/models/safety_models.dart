@@ -23,6 +23,23 @@ class SafetyModels {
       CrimeHotspot(lat: 19.9400, lng: 73.8500, intensity: 0.6, type: 'Stalking', area: 'Deolali Camp'),
       CrimeHotspot(lat: 20.1000, lng: 73.9000, intensity: 0.55, type: 'Theft', area: 'Ojhar'),
       CrimeHotspot(lat: 19.7000, lng: 73.5500, intensity: 0.5, type: 'Harassment', area: 'Igatpuri'),
+      
+      // Nagpur Hotspots
+      CrimeHotspot(lat: 21.1458, lng: 79.0882, intensity: 0.85, type: 'Mobbing', area: 'Sitabuldi', boundary: [
+        LatLng(21.1408, 79.0822), LatLng(21.1508, 79.0822), LatLng(21.1508, 79.0942), LatLng(21.1408, 79.0942)
+      ]),
+      CrimeHotspot(lat: 21.1550, lng: 79.1050, intensity: 0.9, type: 'Theft', area: 'Itwari', boundary: [
+        LatLng(21.1500, 79.0980), LatLng(21.1600, 79.0980), LatLng(21.1600, 79.1120), LatLng(21.1500, 79.1120)
+      ]),
+      CrimeHotspot(lat: 21.1520, lng: 79.0880, intensity: 0.9, type: 'Harassment', area: 'Nagpur Railway Station', boundary: [
+        LatLng(21.1480, 79.0840), LatLng(21.1560, 79.0840), LatLng(21.1560, 79.0920), LatLng(21.1480, 79.0920)
+      ]),
+      CrimeHotspot(lat: 21.1600, lng: 79.0800, intensity: 0.75, type: 'Assault', area: 'Sadar', boundary: [
+        LatLng(21.1550, 79.0750), LatLng(21.1650, 79.0750), LatLng(21.1650, 79.0850), LatLng(21.1550, 79.0850)
+      ]),
+      CrimeHotspot(lat: 21.0800, lng: 78.9900, intensity: 0.75, type: 'Robbery', area: 'Hingna MIDC', boundary: [
+        LatLng(21.0700, 78.9800), LatLng(21.0900, 78.9800), LatLng(21.0900, 79.0000), LatLng(21.0700, 79.0000)
+      ]),
     ];
   }
 
@@ -46,6 +63,7 @@ class CrimeHotspot {
   final double intensity;
   final String type;
   final String area;
+  final List<LatLng>? boundary;
 
   CrimeHotspot({
     required this.lat,
@@ -53,6 +71,7 @@ class CrimeHotspot {
     required this.intensity,
     required this.type,
     required this.area,
+    this.boundary,
   });
 }
 

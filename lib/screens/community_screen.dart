@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import '../theme/app_theme.dart';
 import '../services/safety_service.dart';
 import '../models/safety_models.dart';
+import 'mesh_network_screen.dart';
 
 class CommunityScreen extends StatefulWidget {
   const CommunityScreen({super.key});
@@ -149,7 +150,7 @@ class _CommunityScreenState extends State<CommunityScreen>
         color: const Color(0xFF86EFAC)); // green
     drawText('🕐 $dateStr', height - 42, 18,
         color: const Color(0xFFE2E8F0)); // light gray
-    drawText('SafeHer Verified Report', height - 18, 13,
+    drawText('Nivaran Verified Report', height - 18, 13,
         color: const Color(0xFF7C3AED)); // purple
 
     final picture = recorder.endRecording();
@@ -303,7 +304,7 @@ class _CommunityScreenState extends State<CommunityScreen>
                               context,
                               MaterialPageRoute(
                                   builder: (_) =>
-                                      const mesh_view.MeshNetworkScreen()),
+                                      const MeshNetworkScreen()),
                             );
                           },
                         ),

@@ -20,7 +20,7 @@ class _AICompanionScreenState extends State<AICompanionScreen> with TickerProvid
   
   final List<_ChatMessage> _messages = [
     _ChatMessage(
-      text: "Hi! I'm your SafeHer AI companion. I'll stay connected with you during your travel. How are you feeling?",
+      text: "Hi! I'm your NIVARAN AI companion. I'll stay connected with you during your travel. How are you feeling?",
       isUser: false,
       timestamp: DateTime.now().subtract(const Duration(minutes: 2)),
     ),

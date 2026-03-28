@@ -169,13 +169,25 @@ class SOSBackgroundService : Service(), SensorEventListener {
             this, 0, tapIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+
+        // SOS action button — fires SOSActionReceiver directly (no Flutter needed)
+        val sosIntent = Intent(this, SOSActionReceiver::class.java).apply {
+            action = "com.safeher.safeher.SOS_NOTIFICATION_ACTION"
+        }
+        val sosPi = PendingIntent.getBroadcast(
+            this, 1, sosIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("SafeHer — Safety Active")
-            .setContentText("Press power 2× to send SOS")
+            .setContentTitle("NIVARAN — Safety Active 🛡️")
+            .setContentText("Tap SOS button for emergency ▸ or press power 2×")
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setOngoing(true)
             .setContentIntent(pi)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .addAction(android.R.drawable.ic_delete, "🆘 SOS NOW", sosPi)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC) // Show on lock screen
             .build()
     }
 }

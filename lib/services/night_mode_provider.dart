@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart' as dio;
 import 'dart:io' show Platform;
 import 'night_mode_service.dart';
+import 'api_config.dart';
 
 class NightModeState {
   final bool isActive;                    // is it currently night mode hours
@@ -95,11 +96,7 @@ class NightModeProvider with ChangeNotifier {
     receiveTimeout: const Duration(seconds: 10),
   ));
 
-  static String get _backendUrl {
-    if (kIsWeb) return 'http://localhost:3000';
-    if (Platform.isAndroid) return 'http://10.0.2.2:3000';
-    return 'http://127.0.0.1:3000';
-  }
+  static String get _backendUrl => ApiConfig.baseUrl;
 
   NightModeState get state => _state;
 

@@ -81,7 +81,7 @@ class NotificationService {
 
     await _notificationsPlugin.show(
       0,
-      'SafeHer Quick SOS',
+      'NIVARAN Quick SOS',
       'Hold to stay safe. Tap the button below to alert contacts immediately.',
       platformChannelSpecifics,
       payload: 'activate_sos',

@@ -6,8 +6,10 @@ import '../services/user_service.dart';
 import '../services/safety_service.dart';
 import '../services/sos_background_service.dart';
 import '../theme/app_theme.dart';
+import '../services/local_storage_service.dart';
 import 'login_screen.dart';
 import 'home_screen.dart';
+import 'language_selection_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -108,7 +110,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
           Navigator.pushReplacement(
             context,
             PageRouteBuilder(
-              pageBuilder: (context, animation, secondaryAnimation) => const LoginScreen(),
+              pageBuilder: (context, animation, secondaryAnimation) => const LanguageSelectionScreen(),
               transitionsBuilder: (context, animation, secondaryAnimation, child) {
                 return FadeTransition(opacity: animation, child: child);
               },
@@ -184,43 +186,52 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           // Shield icon with glow
-                          Container(
-                            width: 120,
-                            height: 120,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              gradient: AppTheme.primaryGradient,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: AppTheme.primaryPurple.withValues(alpha: 0.4),
-                                  blurRadius: 40,
-                                  spreadRadius: 10,
-                                ),
-                                BoxShadow(
-                                  color: AppTheme.primaryPink.withValues(alpha: 0.2),
-                                  blurRadius: 60,
-                                  spreadRadius: 20,
-                                ),
-                              ],
-                            ),
-                            child: const Icon(
-                              Icons.shield_rounded,
-                              size: 60,
-                              color: Colors.white,
+                          Hero(
+                            tag: 'logo_icon',
+                            child: Container(
+                              width: 120,
+                              height: 120,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: AppTheme.primaryGradient,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: AppTheme.primaryPurple.withValues(alpha: 0.4),
+                                    blurRadius: 40,
+                                    spreadRadius: 10,
+                                  ),
+                                  BoxShadow(
+                                    color: AppTheme.primaryPink.withValues(alpha: 0.2),
+                                    blurRadius: 60,
+                                    spreadRadius: 20,
+                                  ),
+                                ],
+                              ),
+                              child: const Icon(
+                                Icons.shield_rounded,
+                                size: 60,
+                                color: Colors.white,
+                              ),
                             ),
                           ),
                           const SizedBox(height: 30),
                           
                           // App name
-                          ShaderMask(
-                            shaderCallback: (bounds) => AppTheme.primaryGradient.createShader(bounds),
-                            child: const Text(
-                              'SafeHer',
-                              style: TextStyle(
-                                fontSize: 42,
-                                fontWeight: FontWeight.w800,
-                                color: Colors.white,
-                                letterSpacing: -1,
+                          Hero(
+                            tag: 'logo_text',
+                            child: Material(
+                              type: MaterialType.transparency,
+                              child: ShaderMask(
+                                shaderCallback: (bounds) => AppTheme.primaryGradient.createShader(bounds),
+                                child: const Text(
+                                  'NIVARAN',
+                                  style: TextStyle(
+                                    fontSize: 42,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white,
+                                    letterSpacing: -1,
+                                  ),
+                                ),
                               ),
                             ),
                           ),

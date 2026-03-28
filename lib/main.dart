@@ -18,6 +18,8 @@ import 'services/night_mode_provider.dart';
 import 'screens/night_mode_screen.dart';
 import 'services/notification_service.dart';
 
+import 'services/weather_service.dart';
+
 final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -42,11 +44,11 @@ void main() async {
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
-  runApp(const SafeHerApp());
+  runApp(const NivaranApp());
 }
 
-class SafeHerApp extends StatelessWidget {
-  const SafeHerApp({super.key});
+class NivaranApp extends StatelessWidget {
+  const NivaranApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -54,26 +56,28 @@ class SafeHerApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (context) => ThemeService()),
         ChangeNotifierProvider(create: (context) => BlockchainService()),
+        ChangeNotifierProvider(create: (context) => WeatherService()), // Registered WeatherService
         ChangeNotifierProvider(create: (context) => UserService()),
         ChangeNotifierProvider(create: (context) => AuthService()),
         ChangeNotifierProvider(create: (context) => EvidenceService()),
         ChangeNotifierProvider(create: (context) => SOSBackgroundServiceBridge()),
-        ChangeNotifierProxyProvider2<BlockchainService, UserService, SafetyService>(
+        ChangeNotifierProxyProvider3<BlockchainService, UserService, WeatherService, SafetyService>(
           create: (context) => SafetyService(),
-      update: (context, blockchain, user, safety) {
-        final currentSafety = safety ?? SafetyService();
-        currentSafety.updateBlockchainService(blockchain);
-        
-        // Link native background service triggers to our safety service
-        final bridge = context.read<SOSBackgroundServiceBridge>();
-        bridge.onSOSTriggered = () => currentSafety.activateSOS();
-        if (!bridge.serviceRunning) bridge.startService();
-        
-        if (user.profile != null) {
-          currentSafety.updateUserContext(user.profile!.name, user.profile!.email);
-        }
-        return currentSafety;
-      },
+          update: (context, blockchain, user, weather, safety) {
+            final currentSafety = safety ?? SafetyService();
+            currentSafety.updateBlockchainService(blockchain);
+            currentSafety.updateWeatherService(weather); // Added weather service link
+            
+            // Link native background service triggers to our safety service
+            final bridge = context.read<SOSBackgroundServiceBridge>();
+            bridge.onSOSTriggered = () => currentSafety.activateSOS();
+            if (!bridge.serviceRunning) bridge.startService();
+            
+            if (user.profile != null) {
+              currentSafety.updateUserContext(user.profile!.name, user.profile!.email);
+            }
+            return currentSafety;
+          },
         ),
         ChangeNotifierProvider(create: (context) => MeshService()),
         ChangeNotifierProxyProvider<MeshService, MeshCallService>(
@@ -85,7 +89,7 @@ class SafeHerApp extends StatelessWidget {
       child: Consumer<ThemeService>(
         builder: (context, themeService, _) {
           return MaterialApp(
-            title: 'SafeHer',
+            title: 'NIVARAN',
             navigatorKey: navigatorKey,
             scaffoldMessengerKey: scaffoldMessengerKey,
             debugShowCheckedModeBanner: false,

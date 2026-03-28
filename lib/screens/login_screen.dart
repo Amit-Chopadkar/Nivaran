@@ -6,6 +6,7 @@ import '../services/auth_service.dart';
 import '../services/blockchain_service.dart';
 import '../services/safety_service.dart';
 import 'home_screen.dart';
+import 'onboarding_screen.dart';
 import 'register_contacts_screen.dart';
 import '../main.dart';
 
@@ -86,7 +87,7 @@ class _LoginScreenState extends State<LoginScreen> {
           if (email != null) {
             // Success! Identity matched both password & (new/existing) hardware wallet
             navigatorKey.currentState?.pushReplacement(
-              MaterialPageRoute(builder: (_) => const HomeScreen()),
+              MaterialPageRoute(builder: (_) => const OnboardingScreen()),
             );
           } else {
             userService.logout(); // Reset local state
@@ -274,6 +275,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   if (!_isLogin) const SizedBox(height: 16),
                   
+                  if (!_isLogin)
                     _buildTextField(
                       label: 'Govt ID / Aadhar Number',
                       controller: _idController,

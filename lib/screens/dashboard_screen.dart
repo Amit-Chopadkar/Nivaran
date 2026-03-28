@@ -15,6 +15,8 @@ import 'contacts_screen.dart';
 import 'mesh_network_screen.dart';
 import '../services/blockchain_service.dart';
 import '../services/user_service.dart';
+import '../services/weather_service.dart';
+import 'package:intl/intl.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -68,6 +70,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
     final service = context.watch<SafetyService>();
     final blockchain = context.watch<BlockchainService>();
     final user = context.watch<UserService>();
+    final weather = context.watch<WeatherService>();
     final riskColor = _getRiskColor(service.riskScore);
 
     return Scaffold(
@@ -78,8 +81,8 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
             floating: true,
             automaticallyImplyLeading: false,
             backgroundColor: AppTheme.darkBg.withValues(alpha: 0.97),
-            expandedHeight: 120,
-            toolbarHeight: 120,
+            expandedHeight: 150,
+            toolbarHeight: 150,
             shape: const RoundedRectangleBorder(
               borderRadius: BorderRadius.vertical(
                 bottom: Radius.circular(32),
@@ -153,7 +156,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
 
                           // User Name — fancy italic serif
                           Text(
-                            user.profile?.name ?? 'SafeHer',
+                            user.profile?.name ?? 'Nivaran',
                             style: GoogleFonts.playfairDisplay(
                               fontSize: 26,
                               fontWeight: FontWeight.w700,
@@ -216,7 +219,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
             sliver: SliverList(
               delegate: SliverChildListDelegate([
                 // Risk Score Card
-                _buildRiskCard(service, riskColor),
+                _buildRiskCard(service, weather, riskColor),
                 const SizedBox(height: 20),
 
                 // Quick Actions
@@ -252,7 +255,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
     );
   }
 
-  Widget _buildRiskCard(SafetyService service, Color riskColor) {
+  Widget _buildRiskCard(SafetyService service, WeatherService weather, Color riskColor) {
     final safetyScore = 100 - service.riskScore;
 
     return Container(
@@ -359,9 +362,17 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
 
                   // Column 3: Weather
                   _buildStatColumn(
-                    '26 °C',
-                    'weather',
+                    weather.isLoading && weather.currentWeather == null
+                        ? '--' 
+                        : (weather.currentWeather != null 
+                            ? '${weather.currentWeather!.temp.round()} °C' 
+                            : '--'),
+                    weather.currentWeather != null 
+                        ? weather.currentWeather!.city.toLowerCase()
+                        : (service?.currentLat == 0.0 ? 'detecting...' : 'weather'),
                     isWeather: true,
+                    weather: weather,
+                    service: service,
                   ),
                 ],
               ),
@@ -372,7 +383,24 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
     );
   }
 
-  Widget _buildStatColumn(String value, String label, {bool isMainScore = false, bool isWeather = false}) {
+  Widget _buildStatColumn(String value, String label, {bool isMainScore = false, bool isWeather = false, WeatherService? weather, SafetyService? service}) {
+    // Show snackbar if error just occurred
+    if (isWeather && weather?.error != null && !weather!.isLoading) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        // Only show if the current context is still mounted
+        if (context.mounted) {
+           ScaffoldMessenger.of(context).hideCurrentSnackBar();
+           ScaffoldMessenger.of(context).showSnackBar(
+             SnackBar(
+               content: Text('Weather update failed: ${weather.error}'),
+               backgroundColor: AppTheme.dangerRed,
+               behavior: SnackBarBehavior.floating,
+             ),
+           );
+        }
+      });
+    }
+
     return Expanded(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -407,36 +435,174 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
           ),
           if (isWeather) ...[
             const SizedBox(height: 14),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(100),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.25), width: 1),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text(
-                    'Today',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.3,
+            if (weather?.error != null)
+              GestureDetector(
+                onTap: () {
+                   // Retry via SafetyService logic
+                   if (service != null) {
+                     service.fetchLiveLocation();
+                   } else {
+                     context.read<SafetyService>().fetchLiveLocation();
+                   }
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.refresh_rounded, color: Colors.white, size: 16),
+                ),
+              )
+            else
+              Theme(
+                data: Theme.of(context).copyWith(
+                  hoverColor: Colors.transparent,
+                  focusColor: Colors.transparent,
+                ),
+                child: PopupMenuButton<String>(
+                  offset: const Offset(0, 35),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  color: AppTheme.darkBg,
+                  onSelected: (val) {
+                    if (val == '5days') _showWeatherForecast(weather!);
+                    if (val == 'today' && weather != null) {
+                       // Reload current weather if user manually asks for "Today"
+                       context.read<SafetyService>().fetchLiveLocation();
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    PopupMenuItem(
+                      value: 'today',
+                      child: Row(
+                        children: [
+                          const Icon(Icons.today_rounded, size: 18, color: Colors.white70),
+                          const SizedBox(width: 10),
+                          Text('Today', style: GoogleFonts.inter(fontSize: 13, color: AppTheme.textPrimary, fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: '5days',
+                      child: Row(
+                        children: [
+                          const Icon(Icons.calendar_month_rounded, size: 18, color: Colors.white70),
+                          const SizedBox(width: 10),
+                          Text('Next 5 Days', style: GoogleFonts.inter(fontSize: 13, color: AppTheme.textPrimary, fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                    ),
+                  ],
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(100),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.25), width: 1),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text(
+                          'Today',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.3,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          color: Colors.white,
+                          size: 16,
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(width: 4),
-                  const Icon(
-                    Icons.keyboard_arrow_down_rounded,
-                    color: Colors.white,
-                    size: 16,
-                  ),
-                ],
+                ),
               ),
-            ),
           ],
         ],
+      ),
+    );
+  }
+
+  void _showWeatherForecast(WeatherService weather) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.darkBg,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  '5-Day Forecast',
+                  style: GoogleFonts.inter(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.textPrimary,
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: Icon(Icons.close, color: AppTheme.textPrimary),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            if (weather.forecast.isEmpty)
+              const Center(child: Text('Fetching forecast...', style: TextStyle(color: Colors.white70)))
+            else
+              ...weather.forecast.map((f) => Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 50,
+                      child: Text(
+                        DateFormat('E').format(f.dateTime!),
+                        style: TextStyle(color: AppTheme.textSecondary, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    const Spacer(),
+                    Image.network(
+                      'https://openweathermap.org/img/wn/${f.icon}.png',
+                      width: 32,
+                      height: 32,
+                      errorBuilder: (_, __, ___) => const Icon(Icons.wb_sunny_rounded, color: Colors.orange, size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    SizedBox(
+                      width: 80,
+                      child: Text(
+                        f.condition,
+                        style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      '${f.temp.round()}°',
+                      style: GoogleFonts.inter(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.textPrimary,
+                      ),
+                    ),
+                  ],
+                ),
+              )),
+          ],
+        ),
       ),
     );
   }
@@ -781,9 +947,10 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
         Text(
           title,
           style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
+            fontSize: 18, // Increased from 16
+            fontWeight: FontWeight.w900, // Maximally bold
             color: AppTheme.textPrimary,
+            letterSpacing: -0.5,
           ),
         ),
       ],
@@ -1187,7 +1354,7 @@ class _QuickActionButton extends StatelessWidget {
             height: 58,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: iconColor.withValues(alpha: 0.15),
+              color: iconColor.withValues(alpha: 0.2), // Increased from 0.15
             ),
             child: Icon(icon, color: iconColor, size: 26),
           ),
@@ -1195,8 +1362,8 @@ class _QuickActionButton extends StatelessWidget {
           Text(
             label,
             style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
+              fontSize: 13, // Increased from 12
+              fontWeight: FontWeight.w800, // Bolder
               color: AppTheme.textPrimary,
             ),
           ),
@@ -1343,8 +1510,8 @@ class _FeatureCard extends StatelessWidget {
                       child: Text(
                         title,
                         style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
+                          fontSize: 14, // Increased from 13
+                          fontWeight: FontWeight.w800, // Increased from w700
                           color: AppTheme.textPrimary,
                         ),
                         maxLines: 1,
@@ -1355,8 +1522,9 @@ class _FeatureCard extends StatelessWidget {
                       child: Text(
                         subtitle,
                         style: TextStyle(
-                          fontSize: 10,
-                          color: AppTheme.textMuted,
+                          fontSize: 11, // Increased from 10
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.textSecondary, // Clearer than textMuted
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,

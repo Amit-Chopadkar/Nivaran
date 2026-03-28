@@ -1,5 +1,5 @@
 -- ==========================================
--- 🛡️ SafeHer Enhanced Safety Database Setup
+-- 🛡️ NIVARAN Enhanced Safety Database Setup
 -- ==========================================
 
 -- 1. Drop existing table and all dependent objects (including views like heatmap summaries)
