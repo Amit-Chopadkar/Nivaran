@@ -304,7 +304,12 @@ const GRAPHHOPPER_API_KEY = process.env.GRAPHHOPPER_API_KEY;
 app.post('/api/routes/safest', async (req, res) => {
     try {
         const { origin, destination } = req.body;
-        console.log(`\n🚀 GraphHopper route: "${origin}" → "${destination}"`);
+        console.log(`\n🚀 [ROUTE] Calculating path: "${origin}" → "${destination}"`);
+
+        if (!GRAPHHOPPER_API_KEY) {
+            console.error('❌ [ERROR] GRAPHHOPPER_API_KEY is missing from environment variables!');
+            return res.status(500).json({ success: false, error: 'Routing service configuration missing (API Key)' });
+        }
 
         // --- Parse lat,lng string ---
         const parseLatLng = (str) => {
@@ -337,8 +342,16 @@ app.post('/api/routes/safest', async (req, res) => {
 
         // --- Resolve origin & destination ---
         const isLatLng = (s) => /^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$/.test(s.trim());
-        const orig = isLatLng(origin)      ? parseLatLng(origin)      : await geocode(origin);
-        const dest = isLatLng(destination) ? parseLatLng(destination) : await geocode(destination);
+        
+        let orig, dest;
+        try {
+            orig = isLatLng(origin)      ? parseLatLng(origin)      : await geocode(origin);
+            dest = isLatLng(destination) ? parseLatLng(destination) : await geocode(destination);
+            console.log(`✅ [GEO] Resolved: [${orig.lat},${orig.lng}] → [${dest.lat},${dest.lng}]`);
+        } catch (geoErr) {
+            console.error(`❌ [ERROR] Geocoding failure: ${geoErr.message}`);
+            return res.status(400).json({ success: false, error: `Geocoding failed: ${geoErr.message}` });
+        }
 
         // --- Call GraphHopper Routing API ---
         console.log(`🗺️  GraphHopper: [${orig.lat},${orig.lng}] → [${dest.lat},${dest.lng}]`);
@@ -358,8 +371,13 @@ app.post('/api/routes/safest', async (req, res) => {
             timeout: 15000
         });
 
+        if (!ghRes.data?.paths || ghRes.data.paths.length === 0) {
+            console.warn('⚠️ [GH] No paths found by GraphHopper');
+            return res.status(404).json({ success: false, error: 'No routes found between these points' });
+        }
+
         const paths = ghRes.data.paths;
-        console.log(`✅ GraphHopper returned ${paths.length} route(s). Best has ${paths[0].points.coordinates.length} pts.`);
+        console.log(`✅ [GH] Received ${paths.length} route(s). Processing safety analysis...`);
 
         // --- Analyse each path for safety ---
         const analyzed = paths.map((path, index) => {
@@ -402,8 +420,14 @@ app.post('/api/routes/safest', async (req, res) => {
         });
 
     } catch (error) {
-        console.error('❌ Route Error:', error.response?.data || error.message);
-        res.status(500).json({ success: false, error: error.message });
+        const errorDetail = error.response?.data || error.message;
+        console.error('❌ [ROUTE ERROR]:', errorDetail);
+        
+        const displayMsg = typeof errorDetail === 'object' 
+            ? (errorDetail.message || JSON.stringify(errorDetail)) 
+            : errorDetail;
+            
+        res.status(500).json({ success: false, error: displayMsg });
     }
 });
 const crimeHotspots = [
