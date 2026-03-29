@@ -141,7 +141,12 @@ YOUR BEHAVIOR:
       debugPrint('AI Companion Dio Error: ${e.response?.data ?? e.message}');
       String errMsg = 'API Error';
       if (e.response != null && e.response!.data is Map) {
-        errMsg = e.response!.data['error']?['message'] ?? e.response!.data.toString();
+        final errorData = e.response!.data['error'];
+        if (errorData is Map) {
+          errMsg = errorData['message'] ?? 'AI Service Error';
+        } else {
+          errMsg = errorData?.toString() ?? e.response!.data.toString();
+        }
       } else {
         errMsg = e.message ?? 'Unknown network error';
       }
@@ -239,12 +244,14 @@ YOUR BEHAVIOR:
               },
             ),
             const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('AI Companion', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                Text('Always watching over you', style: TextStyle(fontSize: 11, color: AppTheme.safeGreen)),
-              ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('AI Companion', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis),
+                  Text('Always watching over you', style: TextStyle(fontSize: 11, color: AppTheme.safeGreen), overflow: TextOverflow.ellipsis),
+                ],
+              ),
             ),
           ],
         ),
@@ -514,8 +521,15 @@ class _CompanionStat extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(icon, size: 14, color: color),
-          const SizedBox(width: 6),
-          Text(label, style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w600)),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              label,
+              style: TextStyle(fontSize: 10, color: color, fontWeight: FontWeight.w600),
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+            ),
+          ),
         ],
       ),
     );

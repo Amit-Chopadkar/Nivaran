@@ -64,9 +64,23 @@ Response Guidelines:
         }
       }
       return 'Failed to get a response. Please try again.';
+    } on DioException catch (e) {
+      debugPrint('AILegalService Dio Error: ${e.response?.data ?? e.message}');
+      String errMsg = 'API Error';
+      if (e.response != null && e.response!.data is Map) {
+        final errorData = e.response!.data['error'];
+        if (errorData is Map) {
+          errMsg = errorData['message'] ?? 'Service Error';
+        } else {
+          errMsg = errorData?.toString() ?? e.response!.data.toString();
+        }
+      } else {
+        errMsg = e.message ?? 'Unknown network error';
+      }
+      return 'Error: AI Service reported an issue ($errMsg). Please ensure your configuration is correct.';
     } catch (e) {
-      debugPrint('AILegalService error: $e');
-      return 'Error: Unable to connect to AI service. Please check your internet connection.';
+      debugPrint('AILegalService internal error: $e');
+      return 'Error: An internal error occurred. Please try again later.';
     }
   }
 

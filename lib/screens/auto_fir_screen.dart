@@ -569,8 +569,14 @@ class _AutoFirScreenState extends State<AutoFirScreen> {
                 child: const Icon(Icons.description_rounded, color: Colors.white, size: 18),
               ),
               const SizedBox(width: 10),
-              Text('FIR Draft', style: GoogleFonts.nunito(fontSize: 17, fontWeight: FontWeight.w800, color: const Color(0xFFD97706))),
-              const Spacer(),
+              Expanded(
+                child: Text(
+                  'FIR Draft',
+                  style: GoogleFonts.nunito(fontSize: 17, fontWeight: FontWeight.w800, color: const Color(0xFFD97706)),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+              ),
               IconButton(
                 icon: const Icon(Icons.copy_rounded, color: Color(0xFFD97706), size: 20),
                 onPressed: () {

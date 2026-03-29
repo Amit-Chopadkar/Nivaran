@@ -404,8 +404,14 @@ class _CyberHelpScreenState extends State<CyberHelpScreen> with SingleTickerProv
                 child: const Icon(Icons.smart_toy_rounded, color: Colors.white, size: 18),
               ),
               const SizedBox(width: 10),
-              Text('AI Analysis & Safety Recommendations', style: GoogleFonts.nunito(fontSize: 17, fontWeight: FontWeight.w800, color: const Color(0xFF7C3AED))),
-              const Spacer(),
+              Expanded(
+                child: Text(
+                  'AI Analysis & Safety Recommendations',
+                  style: GoogleFonts.nunito(fontSize: 17, fontWeight: FontWeight.w800, color: const Color(0xFF7C3AED)),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+              ),
               IconButton(
                 icon: const Icon(Icons.copy_rounded, color: Color(0xFF7C3AED), size: 20),
                 onPressed: () {

@@ -362,8 +362,14 @@ class _LawCounselingScreenState extends State<LawCounselingScreen> {
                 child: const Icon(Icons.gavel_rounded, color: Colors.white, size: 18),
               ),
               const SizedBox(width: 10),
-              Text('Legal Guidance', style: GoogleFonts.nunito(fontSize: 17, fontWeight: FontWeight.w800, color: const Color(0xFF15803D))),
-              const Spacer(),
+              Expanded(
+                child: Text(
+                  'Legal Guidance',
+                  style: GoogleFonts.nunito(fontSize: 17, fontWeight: FontWeight.w800, color: const Color(0xFF15803D)),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+              ),
               IconButton(
                 icon: const Icon(Icons.copy_rounded, color: Color(0xFF15803D), size: 20),
                 onPressed: () {
