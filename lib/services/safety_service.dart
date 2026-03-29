@@ -18,6 +18,10 @@ import 'weather_service.dart';
 import 'package:telephony/telephony.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'mesh_service.dart';
+import '../models/mesh_message.dart';
+import 'dart:convert';
+import 'package:uuid/uuid.dart';
 import 'package:screen_state/screen_state.dart';
 import 'night_mode_service.dart';
 
@@ -36,6 +40,16 @@ class SafetyService extends ChangeNotifier {
   // SOS Trigger States
   bool _voiceTriggerEnabled = false; // Disabled by default to prevent automatic recording 
   bool _powerTriggerEnabled = true;
+
+  // Location Sharing Toggles
+  bool _continuousTrackingEnabled = false;
+  bool _sosAutoShareEnabled = true;
+  bool _tripSharingEnabled = true;
+  Timer? _continuousShareTimer;
+  
+  bool get continuousTrackingEnabled => _continuousTrackingEnabled;
+  bool get sosAutoShareEnabled => _sosAutoShareEnabled;
+  bool get tripSharingEnabled => _tripSharingEnabled;
   
   final stt.SpeechToText _speechToText = stt.SpeechToText();
   final Screen _screen = Screen();
@@ -54,9 +68,10 @@ class SafetyService extends ChangeNotifier {
   
   final List<EmergencyContact> _emergencyContacts = [];
 
-  // Community Reports
+  // Community Reports & Dynamic Safe Places
   final List<SafetyReport> _communityReports = [];
-
+  final List<SafePlace> _safePlaces = SafetyModels.getSafePlaces();
+  bool _fetchedDynamicPlaces = false;
 
   final List<String> _sosLog = [];
   TripSession? _currentTrip;
@@ -84,6 +99,7 @@ class SafetyService extends ChangeNotifier {
   String get riskLevel => _riskLevel;
   List<EmergencyContact> get emergencyContacts => _emergencyContacts;
   List<SafetyReport> get communityReports => _communityReports;
+  List<SafePlace> get safePlaces => _safePlaces;
   List<String> get sosLog => _sosLog;
   TripSession? get currentTrip => _currentTrip;
   RiskAssessment? get currentRiskAssessment => _currentRiskAssessment;
@@ -105,26 +121,31 @@ class SafetyService extends ChangeNotifier {
   double get distanceToNextTurnM => _distanceToNextTurnM;
 
   BlockchainService? _blockchainService;
-  void updateBlockchainService(BlockchainService service) {
+  WeatherService? _weatherService;
+  MeshService? _meshService;
+  
+  void updateBlockchainService(BlockchainService? service) {
     _blockchainService = service;
+  }
+
+  void updateWeatherService(WeatherService? service) {
+    if (_weatherService == service || service == null) return;
+    _weatherService = service;
+    if (_currentLat != 0.0 && _lastWeatherUpdate == null) {
+      _weatherService!.fetchWeather(_currentLat, _currentLng);
+      _lastWeatherUpdate = DateTime.now();
+    }
+  }
+  
+  void updateMeshService(MeshService? service) {
+    _meshService = service;
   }
 
   String? _userName;
   String? _userEmail;
   String? _currentSOSId; 
   DateTime? _lastDbLocationUpdate;
-  WeatherService? _weatherService;
   DateTime? _lastWeatherUpdate;
-
-  void updateWeatherService(WeatherService service) {
-    if (_weatherService == service) return;
-    _weatherService = service;
-    // Fetch immediately upon link if coordinates are available and no weather yet
-    if (_weatherService != null && _weatherService!.currentWeather == null && !_weatherService!.isLoading) {
-      _weatherService!.fetchWeather(_currentLat, _currentLng);
-      _lastWeatherUpdate = DateTime.now();
-    }
-  }
   void updateUserContext(String name, String email) {
     if (_userEmail == email && (_userName == name || name.isEmpty)) return;
     if (name.isNotEmpty) _userName = name;
@@ -319,7 +340,7 @@ class SafetyService extends ChangeNotifier {
           final nextIdx = _currentInstructionIndex + 1;
           if (nextIdx < _currentTrip!.path.length) {
             final nextPt = _currentTrip!.path[nextIdx];
-            final dist = _calculateDistance(_currentLat, _currentLng, nextPt.latitude, nextPt.longitude);
+            final dist = calculateDistance(_currentLat, _currentLng, nextPt.latitude, nextPt.longitude);
             if (dist < 0.03) { // within 30m
               _currentInstructionIndex = nextIdx;
             }
@@ -401,7 +422,7 @@ class SafetyService extends ChangeNotifier {
     final hotspots = SafetyModels.getCrimeHotspots();
     bool foundDanger = false;
     for (var hotspot in hotspots) {
-      double dist = _calculateDistance(_currentLat, _currentLng, hotspot.lat, hotspot.lng);
+      double dist = calculateDistance(_currentLat, _currentLng, hotspot.lat, hotspot.lng);
       if (dist < 0.5 && hotspot.intensity > 0.75) { // Within 500m of high risk
         _dangerZoneAlert = true;
         _dangerZoneName = hotspot.area;
@@ -415,11 +436,28 @@ class SafetyService extends ChangeNotifier {
     }
   }
 
-  double _calculateDistance(double lat1, double lng1, double lat2, double lng2) {
+  double calculateDistance(double lat1, double lng1, double lat2, double lng2) {
     const p = 0.017453292519943295;
     final a = 0.5 - math.cos((lat2 - lat1) * p) / 2 +
         math.cos(lat1 * p) * math.cos(lat2 * p) * (1 - math.cos((lng2 - lng1) * p)) / 2;
     return 12742 * math.asin(math.sqrt(a));
+  }
+
+  /// Returns a list of safe places sorted by proximity to current location.
+  List<SafePlace> getNearestSafePlaces({SafePlaceType? type, int limit = 3}) {
+    if (_safePlaces.isEmpty) return [];
+    
+    final list = type == null 
+        ? List<SafePlace>.from(_safePlaces)
+        : _safePlaces.where((p) => p.type == type).toList();
+    
+    list.sort((a, b) {
+      final distA = calculateDistance(_currentLat, _currentLng, a.lat, a.lng);
+      final distB = calculateDistance(_currentLat, _currentLng, b.lat, b.lng);
+      return distA.compareTo(distB);
+    });
+    
+    return list.take(limit).toList();
   }
 
   void _updateNavStats() {
@@ -435,7 +473,7 @@ class SafetyService extends ChangeNotifier {
     int closestIdx = 0;
     double closestDist = double.infinity;
     for (int i = 0; i < path.length; i++) {
-      final d = _calculateDistance(_currentLat, _currentLng, path[i].latitude, path[i].longitude);
+      final d = calculateDistance(_currentLat, _currentLng, path[i].latitude, path[i].longitude);
       if (d < closestDist) {
         closestDist = d;
         closestIdx = i;
@@ -445,7 +483,7 @@ class SafetyService extends ChangeNotifier {
     // Sum remaining path distance from closest waypoint to destination
     double remaining = 0;
     for (int i = closestIdx; i < path.length - 1; i++) {
-      remaining += _calculateDistance(
+      remaining += calculateDistance(
         path[i].latitude, path[i].longitude,
         path[i + 1].latitude, path[i + 1].longitude,
       );
@@ -459,7 +497,7 @@ class SafetyService extends ChangeNotifier {
     // Distance to next turn: use the instruction index waypoint in path
     final nextTurnIdx = _currentInstructionIndex + 1;
     if (nextTurnIdx < path.length) {
-      _distanceToNextTurnM = _calculateDistance(
+      _distanceToNextTurnM = calculateDistance(
         _currentLat, _currentLng,
         path[nextTurnIdx].latitude, path[nextTurnIdx].longitude,
       ) * 1000; // km -> m
@@ -473,7 +511,7 @@ class SafetyService extends ChangeNotifier {
     
     double minDistance = double.infinity;
     for (var point in _currentTrip!.path) {
-      double dist = _calculateDistance(_currentLat, _currentLng, point.latitude, point.longitude);
+      double dist = calculateDistance(_currentLat, _currentLng, point.latitude, point.longitude);
       if (dist < minDistance) minDistance = dist;
     }
     
@@ -536,8 +574,8 @@ class SafetyService extends ChangeNotifier {
       final baseUrl = ApiConfig.baseUrl;
 
       final dioClient = dio.Dio(dio.BaseOptions(
-        connectTimeout: const Duration(seconds: 60),
-        receiveTimeout: const Duration(seconds: 60),
+        connectTimeout: const Duration(seconds: 180),
+        receiveTimeout: const Duration(seconds: 180),
       ));
 
       final response = await dioClient.post(
@@ -581,7 +619,8 @@ class SafetyService extends ChangeNotifier {
   // SOS Functions
   void activateSOS() {
     _isSOSActive = true;
-    _sosLog.insert(0, '🆘 SOS Activated at ${DateTime.now().toString().substring(0, 19)}');
+    final DateTime triggerTime = DateTime.now();
+    _sosLog.insert(0, '🆘 SOS Activated at ${triggerTime.toString().substring(0, 19)}');
     _sosLog.insert(0, '📍 Location shared with emergency contacts');
     _sosLog.insert(0, '📱 SMS alerts sent to all contacts');
     
@@ -591,17 +630,20 @@ class SafetyService extends ChangeNotifier {
     // Trigger Backend Cloud SOS (Twilio Call + Admin Notification)
     _triggerCloudSOSRelay();
     
+    // Broadcast via Mesh Network so connected peers can upload it if we are offline
+    _broadcastMeshSOS(triggerTime);
+    
     // Start Audio Recording asynchronously
     _startSOSRecording();
 
     // 1. Log to Supabase IMMEDIATELY (Don't wait for blockchain)
-    _performSupabaseLog(null);
+    _performSupabaseLog(null, triggerTime);
 
     // 2. Log to Blockchain in background
     if (_blockchainService != null) {
       _blockchainService!.storeSOSOnBlockchain({
         'type': 'SOS_ACTIVATED',
-        'timestamp': DateTime.now().toIso8601String(),
+        'timestamp': triggerTime.toUtc().toIso8601String(),
         'lat': _currentLat,
         'lng': _currentLng,
         'user_name': _userName ?? 'Unknown User',
@@ -621,18 +663,33 @@ class SafetyService extends ChangeNotifier {
     notifyListeners();
   }
 
+  void _broadcastMeshSOS(DateTime triggerTime) {
+    if (_meshService == null) return;
+    
+    final sosPayload = jsonEncode({
+      'user_email': _userEmail ?? 'unknown',
+      'user_name': _userName ?? 'Unknown User',
+      'latitude': _currentLat,
+      'longitude': _currentLng,
+      'timestamp': triggerTime.toUtc().toIso8601String(),
+    });
+    
+    final msg = MeshMessage(
+      id: const Uuid().v4(),
+      senderId: _meshService!.userId,
+      senderName: _userName ?? 'Unknown User',
+      receiverId: 'broadcast',
+      payload: sosPayload,
+      timestamp: triggerTime,
+      type: 'sos_alert',
+      ackRequired: false,
+    );
+    
+    _meshService!.broadcastMessage(msg);
+  }
+
   Future<void> sendNativeSMSAlerts() async {
     final Telephony telephony = Telephony.instance;
-    
-    // Request permission explicitly before sending
-    bool? permissionsGranted = await telephony.requestPhoneAndSmsPermissions;
-    if (permissionsGranted == null || !permissionsGranted) {
-      debugPrint('SMS permissions denied.');
-      _sosLog.insert(0, '⚠️ SMS Permission denied. Contacts not alerted.');
-      notifyListeners();
-      return;
-    }
-
     final locationUrl = 'https://maps.google.com/?q=$_currentLat,$_currentLng';
     final message = '🚨 SOS EMERGENCY 🚨 ${_userName ?? "A user"} needs help! Live location: $locationUrl';
     
@@ -640,44 +697,41 @@ class SafetyService extends ChangeNotifier {
       debugPrint('No emergency contacts to alert via SMS.');
       _sosLog.insert(0, '⚠️ No emergency contacts found.');
       notifyListeners();
-    } else {
-      // 1. Background SMS (Silent - using telephony)
-      for (var contact in _emergencyContacts) {
-        if (contact.phone.isEmpty) continue;
-        try {
-          await telephony.sendSms(
-            to: contact.phone,
-            message: message,
-          );
-          debugPrint('Background SMS hit for ${contact.name}');
-        } catch (e) {
-          debugPrint('Background SMS Error for ${contact.name}: $e');
-        }
-      }
-
-      // 2. Open Native SMS Application with ALL recipients pre-filled as a chat group
-      // Multi-recipient SMS URIs use a comma separator on most devices
-      final String recipients = _emergencyContacts.map((c) => c.phone.trim()).join(',');
-      final Uri smsUri = Uri(
-        scheme: 'sms',
-        path: recipients,
-        queryParameters: {'body': message},
-      );
-
-      try {
-        if (await canLaunchUrl(smsUri)) {
-          await launchUrl(smsUri, mode: LaunchMode.externalApplication);
-          debugPrint('Native SMS app opened with recipients: $recipients');
-        } else {
-          debugPrint('Cannot launch SMS app.');
-        }
-      } catch (e) {
-        debugPrint('Error launching native SMS: $e');
-      }
-      
-      _sosLog.insert(0, '✅ SMS alerts sent and messenger opened.');
-      notifyListeners();
+      return;
     }
+
+    // 1. Background SMS (Silent - using telephony)
+    // Removed buggy requestPhoneAndSmsPermissions which was causing Android RuntimeException request=42
+    for (var contact in _emergencyContacts) {
+      if (contact.phone.isEmpty) continue;
+      try {
+        await telephony.sendSms(
+          to: contact.phone,
+          message: message,
+        );
+        debugPrint('Background SMS hit for ${contact.name}');
+      } catch (e) {
+        debugPrint('Background SMS Error for ${contact.name}: $e');
+      }
+    }
+
+    // 2. Open Native SMS Application with ALL recipients pre-filled as a chat group
+    final String recipients = _emergencyContacts.map((c) => c.phone.trim()).join(',');
+    final Uri smsUri = Uri(
+      scheme: 'sms',
+      path: recipients,
+      queryParameters: {'body': message},
+    );
+
+    try {
+      await launchUrl(smsUri);
+      debugPrint('Native SMS app opened with recipients: $recipients');
+    } catch (e) {
+      debugPrint('Error launching native SMS: $e');
+    }
+    
+    _sosLog.insert(0, '✅ SMS alerts sent and messenger opened.');
+    notifyListeners();
   }
 
   Future<void> _triggerCloudSOSRelay() async {
@@ -703,19 +757,18 @@ class SafetyService extends ChangeNotifier {
     }
   }
 
-  void _performSupabaseLog(String? txHash) {
+  void _performSupabaseLog(String? txHash, DateTime triggerTime) {
     if (_userEmail != null) {
       _sosLog.insert(0, '☁️ Syncing with Safety Cloud...');
       notifyListeners();
       
       SupabaseService.logSOSEvent(
         userEmail: _userEmail!,
-        userName: _userName ?? 'Unknown User',
         type: 'Crime',
         latitude: _currentLat,
         longitude: _currentLng,
-        meshPath: ['Device_A', 'Gateway_Main'],
         blockchainHash: txHash,
+        createdAt: triggerTime,
       ).then((result) {
         if (result['success'] == true) {
           _currentSOSId = result['id'];
@@ -787,18 +840,35 @@ class SafetyService extends ChangeNotifier {
           if (_currentSOSId != null) {
             _sosLog.insert(0, '🎙️ Audio stopped, uploading securely...');
             notifyListeners();
-            final formData = dio.FormData.fromMap({
-              'logId': _currentSOSId,
-              'audio': await dio.MultipartFile.fromFile(
-                path, 
-                filename: 'sos_audio.m4a',
-              ),
-            });
-            await _dio.post(
-              '$_backendUrl/api/blockchain/sos/audio',
-              data: formData,
+            
+            // 1. Upload to Express backend (legacy)
+            try {
+              final formData = dio.FormData.fromMap({
+                'logId': _currentSOSId,
+                'audio': await dio.MultipartFile.fromFile(
+                  path, 
+                  filename: 'sos_audio.m4a',
+                ),
+              });
+              await _dio.post(
+                '$_backendUrl/api/blockchain/sos/audio',
+                data: formData,
+              );
+            } catch (e) {
+              debugPrint('Express audio upload failed (non-critical): $e');
+            }
+            
+            // 2. Upload to Supabase Storage (primary - reliable)
+            final audioUrl = await SupabaseService.uploadSOSAudio(
+              logId: _currentSOSId!,
+              filePath: path,
             );
-            _sosLog.insert(0, '✅ Audio evidence uploaded to dashboard');
+            
+            if (audioUrl != null) {
+              _sosLog.insert(0, '✅ Audio evidence uploaded to dashboard');
+            } else {
+              _sosLog.insert(0, '⚠️ Audio saved locally, cloud upload pending');
+            }
             notifyListeners();
           } else {
             _sosLog.insert(0, '⚠️ Could not upload audio (No SOS ID from DB)');
@@ -815,8 +885,8 @@ class SafetyService extends ChangeNotifier {
 
   // Trip Monitoring
   final dio.Dio _dio = dio.Dio(dio.BaseOptions(
-    connectTimeout: const Duration(seconds: 60),
-    receiveTimeout: const Duration(seconds: 60),
+    connectTimeout: const Duration(seconds: 180),
+    receiveTimeout: const Duration(seconds: 180),
   ));
   
   static String get _backendUrl => ApiConfig.baseUrl;
@@ -869,6 +939,19 @@ class SafetyService extends ChangeNotifier {
         // Initialize stats immediately
         _updateNavStats();
         notifyListeners();
+
+        // Notify contacts if trip sharing is enabled
+        if (_tripSharingEnabled && _emergencyContacts.isNotEmpty) {
+          final url = 'https://maps.google.com/?q=$_currentLat,$_currentLng';
+          final msg = Uri.encodeComponent(
+              '🗺️ I started a trip to "$destination". Track me: $url');
+          for (final contact in _emergencyContacts) {
+            if (contact.phone.isEmpty) continue;
+            final smsUri = Uri.parse('sms:${contact.phone}?body=$msg');
+            try { await launchUrl(smsUri); } catch (_) {}
+          }
+          _sosLog.insert(0, '📤 Trip start shared with contacts');
+        }
 
         if (response.data['status'] == 'Risky') {
           simulateAnomaly('Risky Route');
@@ -982,6 +1065,77 @@ class SafetyService extends ChangeNotifier {
     SupabaseService.deleteContact(id);
   }
 
+  // ── Location Sharing Controls ──────────────────────────────────────────────
+
+  /// Toggle 1: Continuous Tracking — periodically sends a Google Maps link via SMS
+  void toggleContinuousTracking(bool enabled) {
+    _continuousTrackingEnabled = enabled;
+    if (enabled) {
+      _startContinuousSharing();
+      _sosLog.insert(0, '📡 Continuous tracking started');
+    } else {
+      _continuousShareTimer?.cancel();
+      _sosLog.insert(0, '🔕 Continuous tracking stopped');
+    }
+    notifyListeners();
+  }
+
+  void _startContinuousSharing() {
+    _continuousShareTimer?.cancel();
+    // Send immediately, then every 10 minutes
+    _shareLocationLinkWithPrimary(label: '📍 Live Location Update');
+    _continuousShareTimer = Timer.periodic(const Duration(minutes: 10), (_) {
+      if (_continuousTrackingEnabled) {
+        _shareLocationLinkWithPrimary(label: '📍 Live Location Update');
+      }
+    });
+  }
+
+  /// Toggle 2: SOS Auto-Share — controls whether location is sent to ALL contacts on SOS
+  void toggleSOSAutoShare(bool enabled) {
+    _sosAutoShareEnabled = enabled;
+    _sosLog.insert(
+        0, enabled ? '🚨 SOS auto-share enabled' : '🔕 SOS auto-share disabled');
+    notifyListeners();
+  }
+
+  /// Toggle 3: Trip Sharing — controls whether contacts get a link when a trip starts
+  void toggleTripSharing(bool enabled) {
+    _tripSharingEnabled = enabled;
+    _sosLog.insert(
+        0, enabled ? '🗺️ Trip sharing enabled' : '🔕 Trip sharing disabled');
+    notifyListeners();
+  }
+
+  /// Sends an SMS/WhatsApp location link to all emergency contacts.
+  Future<void> sendLocationLinkToAll({String label = '📍 My current location'}) async {
+    final url = 'https://maps.google.com/?q=$_currentLat,$_currentLng';
+    final message = Uri.encodeComponent('$label $url');
+    for (final contact in _emergencyContacts) {
+      if (contact.phone.isEmpty) continue;
+      final smsUri = Uri.parse('sms:${contact.phone}?body=$message');
+      try {
+        await launchUrl(smsUri);
+      } catch (_) {}
+    }
+    _sosLog.insert(0, '✅ Location link sent to all contacts');
+    notifyListeners();
+  }
+
+  /// Sends a location link to the primary trusted contact only.
+  Future<void> _shareLocationLinkWithPrimary({required String label}) async {
+    final primary = _emergencyContacts.isNotEmpty ? _emergencyContacts.first : null;
+    if (primary == null) return;
+    final url = 'https://maps.google.com/?q=$_currentLat,$_currentLng';
+    final message = Uri.encodeComponent('$label ${primary.name}! $url');
+    final smsUri = Uri.parse('sms:${primary.phone}?body=$message');
+    try {
+      await launchUrl(smsUri);
+    } catch (e) {
+      debugPrint('[LocationShare] SMS launch error: $e');
+    }
+  }
+
   // Anomaly Detection
   void simulateAnomaly(String type) {
     _anomalyDetected = true;
@@ -1036,8 +1190,88 @@ class SafetyService extends ChangeNotifier {
         );
       }
     }
+
+    // Fetch safe places if not done or location changed significantly
+    if (!_fetchedDynamicPlaces) {
+       _fetchLiveSafePlaces(lat, lng);
+    }
     
     notifyListeners();
+  }
+
+  /// Fetches real-world safe places (Police Stations & Hospitals) around given coords
+  /// using the OpenStreetMap Overpass API.
+  Future<void> _fetchLiveSafePlaces(double lat, double lng) async {
+    // Flag so we don't spam the API on every single GPS tick
+    _fetchedDynamicPlaces = true;
+    
+    try {
+      final dioClient = dio.Dio(dio.BaseOptions(
+        connectTimeout: const Duration(seconds: 15),
+        receiveTimeout: const Duration(seconds: 15),
+      ));
+
+      // Overpass QL to find police and hospitals within 5km radius
+      final query = """
+      [out:json][timeout:25];
+      (
+        node["amenity"="police"](around:5000, $lat, $lng);
+        way["amenity"="police"](around:5000, $lat, $lng);
+        node["amenity"="hospital"](around:5000, $lat, $lng);
+        way["amenity"="hospital"](around:5000, $lat, $lng);
+      );
+      out body;
+      >;
+      out skel qt;
+      """;
+
+      final response = await dioClient.get(
+        'https://overpass-api.de/api/interpreter',
+        queryParameters: {'data': query},
+      );
+
+      if (response.data != null && response.data['elements'] != null) {
+        final List elements = response.data['elements'] as List;
+        final List<SafePlace> dynamicPlaces = [];
+
+        for (var element in elements) {
+          if (element['type'] == 'node') {
+            final double pLat = (element['lat'] as num).toDouble();
+            final double pLng = (element['lon'] as num).toDouble();
+            final Map? tags = element['tags'];
+            if (tags == null) continue;
+
+            final String name = tags['name'] ?? tags['operator'] ?? 'Public Service';
+            final String amenity = tags['amenity'] ?? '';
+            
+            SafePlaceType type = SafePlaceType.safeZone;
+            if (amenity == 'police') type = SafePlaceType.policeStation;
+            if (amenity == 'hospital') type = SafePlaceType.hospital;
+
+            dynamicPlaces.add(SafePlace(
+              lat: pLat,
+              lng: pLng,
+              name: name,
+              type: type,
+              rating: 4.0 + (math.Random().nextDouble() * 1.0),
+            ));
+          }
+        }
+
+        if (dynamicPlaces.isNotEmpty) {
+          _safePlaces.clear();
+          // Add Nagpur/Nashik static defaults back in
+          _safePlaces.addAll(SafetyModels.getSafePlaces());
+          // Add the real-world live ones found
+          _safePlaces.addAll(dynamicPlaces);
+          debugPrint('[SafetyService] Loaded ${dynamicPlaces.length} live safe places from OpenStreetMap');
+          notifyListeners();
+        }
+      }
+    } catch (e) {
+      debugPrint('[SafetyService] Error fetching dynamic safe places: $e');
+      // Keep static defaults on failure
+    }
   }
 
   Future<void> fetchLiveLocation() async {

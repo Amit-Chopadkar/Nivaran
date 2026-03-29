@@ -94,7 +94,9 @@ class _RegisterContactsScreenState extends State<RegisterContactsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFF0F0F1A),
       body: Container(
+        constraints: BoxConstraints(minHeight: MediaQuery.of(context).size.height),
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,

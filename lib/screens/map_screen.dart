@@ -56,7 +56,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   Widget build(BuildContext context) {
     final service = context.watch<SafetyService>();
     final hotspots = SafetyModels.getCrimeHotspots();
-    final safePlaces = SafetyModels.getSafePlaces();
+    final safePlaces = service.safePlaces; // Using dynamic list from service
 
     return Scaffold(
       body: Stack(

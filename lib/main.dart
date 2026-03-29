@@ -61,12 +61,23 @@ class NivaranApp extends StatelessWidget {
         ChangeNotifierProvider(create: (context) => AuthService()),
         ChangeNotifierProvider(create: (context) => EvidenceService()),
         ChangeNotifierProvider(create: (context) => SOSBackgroundServiceBridge()),
-        ChangeNotifierProxyProvider3<BlockchainService, UserService, WeatherService, SafetyService>(
+        ChangeNotifierProxyProvider<UserService, MeshService>(
+          create: (context) => MeshService(),
+          update: (context, user, previous) {
+            final mesh = previous ?? MeshService();
+            if (user.profile != null && user.profile!.name.isNotEmpty) {
+              mesh.updateUserName(user.profile!.name);
+            }
+            return mesh;
+          },
+        ),
+        ChangeNotifierProxyProvider4<BlockchainService, UserService, WeatherService, MeshService, SafetyService>(
           create: (context) => SafetyService(),
-          update: (context, blockchain, user, weather, safety) {
+          update: (context, blockchain, user, weather, mesh, safety) {
             final currentSafety = safety ?? SafetyService();
             currentSafety.updateBlockchainService(blockchain);
             currentSafety.updateWeatherService(weather); // Added weather service link
+            currentSafety.updateMeshService(mesh); // Added mesh service link
             
             // Link native background service triggers to our safety service
             final bridge = context.read<SOSBackgroundServiceBridge>();
@@ -79,7 +90,6 @@ class NivaranApp extends StatelessWidget {
             return currentSafety;
           },
         ),
-        ChangeNotifierProvider(create: (context) => MeshService()),
         ChangeNotifierProxyProvider<MeshService, MeshCallService>(
           create: (context) => MeshCallService(context.read<MeshService>()),
           update: (context, mesh, previous) => previous ?? MeshCallService(mesh),

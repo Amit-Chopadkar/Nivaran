@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:provider/provider.dart';
 import '../services/ai_legal_service.dart';
 import '../services/evidence_service.dart';
@@ -569,6 +571,22 @@ class _AutoFirScreenState extends State<AutoFirScreen> {
               const SizedBox(width: 10),
               Text('FIR Draft', style: GoogleFonts.nunito(fontSize: 17, fontWeight: FontWeight.w800, color: const Color(0xFFD97706))),
               const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.copy_rounded, color: Color(0xFFD97706), size: 20),
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: response));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('FIR Draft copied to clipboard', style: GoogleFonts.nunito(fontWeight: FontWeight.w600)),
+                      backgroundColor: const Color(0xFFD97706),
+                      behavior: SnackBarBehavior.floating,
+                      duration: const Duration(seconds: 2),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                  );
+                },
+                tooltip: 'Copy Draft',
+              ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(8)),
@@ -579,7 +597,15 @@ class _AutoFirScreenState extends State<AutoFirScreen> {
           const SizedBox(height: 16),
           Container(height: 1, color: const Color(0xFFF1F5F9)),
           const SizedBox(height: 16),
-          Text(response, style: GoogleFonts.nunito(fontSize: 14, color: const Color(0xFF334155), height: 1.7)),
+          MarkdownBody(
+            data: response,
+            styleSheet: MarkdownStyleSheet(
+              p: GoogleFonts.nunito(fontSize: 14, color: const Color(0xFF334155), height: 1.7),
+              h3: GoogleFonts.nunito(fontSize: 16, fontWeight: FontWeight.w800, color: const Color(0xFF1E293B), height: 2.0),
+              listBullet: TextStyle(color: const Color(0xFFD97706), fontSize: 16),
+              strong: GoogleFonts.nunito(fontWeight: FontWeight.w800, color: const Color(0xFF1E293B)),
+            ),
+          ),
           const SizedBox(height: 16),
           Container(
             padding: const EdgeInsets.all(14),

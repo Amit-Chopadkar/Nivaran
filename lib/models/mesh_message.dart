@@ -23,7 +23,7 @@ class MeshMessage extends HiveObject {
   final String type; // 'chat', 'call_offer', 'call_answer', 'ice_candidate'
 
   @HiveField(6)
-  bool isDelivered;
+  String deliveryStatus; // 'pending', 'relayed', 'delivered_to_admin', 'unconfirmed'
 
   @HiveField(7)
   int hopCount;
@@ -34,6 +34,12 @@ class MeshMessage extends HiveObject {
   @HiveField(9)
   bool isEncrypted;
 
+  @HiveField(10)
+  final String senderName;
+
+  @HiveField(11)
+  final bool ackRequired;
+
   MeshMessage({
     required this.id,
     required this.senderId,
@@ -41,10 +47,12 @@ class MeshMessage extends HiveObject {
     required this.payload,
     required this.timestamp,
     required this.type,
-    this.isDelivered = false,
+    this.deliveryStatus = 'pending',
     this.hopCount = 0,
     this.pathTrace = const [],
     this.isEncrypted = false,
+    this.senderName = 'Unknown',
+    this.ackRequired = false,
   });
 
   Map<String, dynamic> toJson() {
@@ -55,10 +63,12 @@ class MeshMessage extends HiveObject {
       'payload': payload,
       'timestamp': timestamp.toIso8601String(),
       'type': type,
-      'isDelivered': isDelivered,
+      'deliveryStatus': deliveryStatus,
       'hopCount': hopCount,
       'pathTrace': pathTrace,
       'isEncrypted': isEncrypted,
+      'senderName': senderName,
+      'ackRequired': ackRequired,
     };
   }
 
@@ -70,10 +80,12 @@ class MeshMessage extends HiveObject {
       payload: json['payload'],
       timestamp: DateTime.parse(json['timestamp']),
       type: json['type'],
-      isDelivered: json['isDelivered'] ?? false,
+      deliveryStatus: json['deliveryStatus'] ?? 'pending',
       hopCount: json['hopCount'] ?? 0,
       pathTrace: List<String>.from(json['pathTrace'] ?? []),
       isEncrypted: json['isEncrypted'] ?? false,
+      senderName: json['senderName'] ?? 'Unknown',
+      ackRequired: json['ackRequired'] ?? false,
     );
   }
 }

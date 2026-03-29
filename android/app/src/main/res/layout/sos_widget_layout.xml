@@ -9,8 +9,8 @@
 
     <FrameLayout
         android:id="@+id/widget_sos_button"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
+        android:layout_width="120dp"
+        android:layout_height="120dp"
         android:background="@drawable/sos_widget_circle_bg">
         
         <TextView

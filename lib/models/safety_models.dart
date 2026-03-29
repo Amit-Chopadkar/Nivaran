@@ -45,6 +45,7 @@ class SafetyModels {
 
   static List<SafePlace> getSafePlaces() {
     return [
+      // Nashik Safe Places
       SafePlace(lat: 19.9975, lng: 73.7898, name: 'Sarkarwada PS', type: SafePlaceType.policeStation, rating: 4.5),
       SafePlace(lat: 20.0059, lng: 73.7654, name: 'Gangapur PS', type: SafePlaceType.policeStation, rating: 4.2),
       SafePlace(lat: 19.9950, lng: 73.7860, name: 'Civil Hospital Nashik', type: SafePlaceType.hospital, rating: 4.8),
@@ -53,6 +54,15 @@ class SafetyModels {
       SafePlace(lat: 19.9955, lng: 73.7805, name: 'City Centre Mall', type: SafePlaceType.safeZone, rating: 4.7),
       SafePlace(lat: 19.9980, lng: 73.7850, name: 'Nashik Central Bus Stand', type: SafePlaceType.safeZone, rating: 4.1),
       SafePlace(lat: 19.9800, lng: 73.7700, name: 'Trimurti Chowk Safe Zone', type: SafePlaceType.safeZone, rating: 4.0),
+      
+      // Nagpur Safe Places
+      SafePlace(lat: 21.1463, lng: 79.0849, name: 'Sitabuldi Police Station', type: SafePlaceType.policeStation, rating: 4.3),
+      SafePlace(lat: 21.1610, lng: 79.0830, name: 'Sadar Police Station', type: SafePlaceType.policeStation, rating: 4.1),
+      SafePlace(lat: 21.1350, lng: 79.0950, name: 'Government Medical College Hospital (GMCH)', type: SafePlaceType.hospital, rating: 4.6),
+      SafePlace(lat: 21.1500, lng: 79.0800, name: 'Mayo Hospital (IGGMCH)', type: SafePlaceType.hospital, rating: 4.4),
+      SafePlace(lat: 21.1250, lng: 79.0550, name: 'Wockhardt Hospital', type: SafePlaceType.hospital, rating: 4.8),
+      SafePlace(lat: 21.1550, lng: 79.0850, name: 'Nagpur Railway Station Safe Zone', type: SafePlaceType.safeZone, rating: 4.2),
+      SafePlace(lat: 21.1300, lng: 79.0600, name: 'Dharampeth Safe Zone', type: SafePlaceType.safeZone, rating: 4.5),
     ];
   }
 }

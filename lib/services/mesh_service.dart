@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:cryptography/cryptography.dart';
 import '../models/mesh_message.dart';
 import 'local_storage_service.dart';
+import 'supabase_service.dart';
 
 /// Mesh service using Nearby Connections API.
 /// Works over Bluetooth + WiFi Direct (no internet needed).
@@ -19,7 +20,7 @@ class MeshService extends ChangeNotifier {
   final String userId = const Uuid().v4();
 
   /// Human-readable name shown to peers
-  final String userName;
+  String userName;
 
   /// Name broadcasted over BLE (includes our short ID to prevent tie collisions)
   String get _broadcastName => '${userId.substring(0, 8)}|$userName';
@@ -43,6 +44,8 @@ class MeshService extends ChangeNotifier {
   final _signalingController = StreamController<MeshMessage>.broadcast();
   Stream<MeshMessage> get signalingStream => _signalingController.stream;
 
+  Timer? _ttlTimer;
+
   /// Stream for new chat messages
   final _chatMessageController = StreamController<MeshMessage>.broadcast();
   Stream<MeshMessage> get chatMessageStream => _chatMessageController.stream;
@@ -63,6 +66,13 @@ class MeshService extends ChangeNotifier {
   ]); // In a real app, this should be derived from a shared secret or PBKDF2
 
   MeshService({this.userName = 'Nivaran User'});
+
+  void updateUserName(String name) {
+    if (name.isNotEmpty && userName != name) {
+      userName = name;
+      notifyListeners();
+    }
+  }
 
   // ─── Public API ─────────────────────────────────────────────────────────
 
@@ -100,11 +110,12 @@ class MeshService extends ChangeNotifier {
            final msg = MeshMessage(
              id: id,
              senderId: senderId,
+             senderName: data['sender_name'] ?? 'Remote User',
              receiverId: 'broadcast',
              payload: data['payload'] ?? '',
              timestamp: DateTime.tryParse(data['created_at'] ?? '') ?? DateTime.now(),
              type: 'chat',
-             isDelivered: true,
+             deliveryStatus: 'delivered_to_admin',
            );
            await LocalStorageService.addMessage(msg);
            _chatMessageController.add(msg);
@@ -131,11 +142,12 @@ class MeshService extends ChangeNotifier {
         final msg = MeshMessage(
           id: data['id'] ?? const Uuid().v4(),
           senderId: data['sender_id'] ?? 'unknown',
+          senderName: data['sender_name'] ?? 'Remote User',
           receiverId: 'broadcast',
           payload: data['payload'] ?? '',
           timestamp: DateTime.tryParse(data['created_at'] ?? '') ?? DateTime.now(),
           type: 'chat',
-          isDelivered: true,
+          deliveryStatus: 'delivered_to_admin',
         );
 
         // Slight hack to pass the sender name through the UI without breaking MeshMessage structure:
@@ -159,9 +171,24 @@ class MeshService extends ChangeNotifier {
       },
     );
     _broadcastChannel?.subscribe();
+
+    _ttlTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+      final awaiting = LocalStorageService.getMessagesAwaitingAck();
+      final now = DateTime.now();
+      bool changed = false;
+      for (var msg in awaiting) {
+         if (now.difference(msg.timestamp).inSeconds > 120 && (msg.deliveryStatus == 'pending' || msg.deliveryStatus == 'relayed')) {
+            msg.deliveryStatus = 'unconfirmed';
+            msg.save();
+            changed = true;
+         }
+      }
+      if (changed) notifyListeners();
+    });
   }
 
   Future<void> stopAll() async {
+    _ttlTimer?.cancel();
     await _safeStop();
     await _broadcastChannel?.unsubscribe();
     _broadcastChannel = null;
@@ -219,8 +246,9 @@ class MeshService extends ChangeNotifier {
       Supabase.instance.client.from('mesh_broadcasts').insert({
         'id': msg.id,
         'sender_id': msg.senderId,
-        'sender_name': userName,
+        'sender_name': msg.senderName, // use message senderName instead
         'payload': msg.payload,
+        'is_admin': isAdmin,
       }).catchError((e) {
         debugPrint('[Mesh] Failed to sync broadcast to Supabase: $e');
       });
@@ -394,7 +422,8 @@ class MeshService extends ChangeNotifier {
 
       if (type == 'receipt') {
         final msgId = json['messageId'] as String;
-        await LocalStorageService.markAsDelivered(msgId);
+        // On local receipt, mark relayed
+        await LocalStorageService.updateDeliveryStatus(msgId, 'relayed');
         notifyListeners();
         return;
       }
@@ -415,32 +444,63 @@ class MeshService extends ChangeNotifier {
         processedMsg = await _decryptMessage(msg);
       }
 
-      if (processedMsg.type != 'chat') {
+      if (processedMsg.type != 'chat' && processedMsg.type != 'sos_alert') {
         debugPrint('[Mesh] Signalling: ${processedMsg.type}');
         _signalingController.add(processedMsg);
         return;
       }
 
-      debugPrint('[Mesh] Relay/Recv from ${processedMsg.senderId}: "${processedMsg.payload}" (Hops: ${processedMsg.hopCount})');
+      if (processedMsg.type == 'sos_alert') {
+        debugPrint('[Mesh] SOS Alert Relay/Recv from ${processedMsg.senderName}');
+        try {
+          final sosData = jsonDecode(processedMsg.payload);
+          final String? timestampStr = sosData['timestamp'];
+          final DateTime? triggerTime = timestampStr != null ? DateTime.tryParse(timestampStr) : null;
 
-      // 3. Local Delivery
-      if (processedMsg.receiverId == userId || processedMsg.receiverId == 'broadcast' || (isAdmin && processedMsg.receiverId == 'admin')) {
-         if (!LocalStorageService.chatBox.containsKey(processedMsg.id)) {
-            await LocalStorageService.addMessage(processedMsg);
-            _chatMessageController.add(processedMsg);
-            notifyListeners();
-         }
+          // Try to upload to Superbase on behalf of offline sender if we have internet
+          SupabaseService.logSOSEvent(
+            userEmail: sosData['user_email'] ?? 'unknown',
+            type: 'Crime',
+            latitude: sosData['latitude'] ?? 0.0,
+            longitude: sosData['longitude'] ?? 0.0,
+            blockchainHash: null,
+            createdAt: triggerTime,
+          ).then((result) {
+            if (result['success'] == true) {
+              debugPrint('Supabase: Peer SOS Alert logged successfully for ${sosData['user_email']}');
+            }
+          });
+        } catch (e) {
+          debugPrint('[Mesh] SOS Alert parsing error: $e');
+        }
+      } else {
+        debugPrint('[Mesh] Relay/Recv from ${processedMsg.senderId}: "${processedMsg.payload}" (Hops: ${processedMsg.hopCount})');
 
-         // Special: Admin node sends a receipt back through the mesh
-         if (isAdmin && processedMsg.receiverId == 'admin') {
-           _sendAdminReceipt(processedMsg);
-         }
+        // 3. Local Delivery
+        if (processedMsg.receiverId == userId || processedMsg.receiverId == 'broadcast' || (isAdmin && processedMsg.receiverId == 'admin')) {
+             if (!LocalStorageService.chatBox.containsKey(processedMsg.id)) {
+                await LocalStorageService.addMessage(processedMsg);
+                _chatMessageController.add(processedMsg);
+                notifyListeners();
+             }
+
+             // Special: Admin node sends a receipt back through the mesh
+             if (isAdmin && processedMsg.receiverId == 'admin') {
+               _sendAdminReceipt(processedMsg);
+             }
+        }
       }
       
       // If we received an admin receipt, notify the UI
-      if (processedMsg.type == 'admin_receipt') {
-        final originalMsgId = processedMsg.payload;
-        await LocalStorageService.markAsDelivered(originalMsgId);
+      if (processedMsg.type == 'admin_ack' || processedMsg.type == 'admin_receipt') {
+        String originalMsgId = processedMsg.payload;
+        if (processedMsg.type == 'admin_ack') {
+          try {
+            final adminAckData = jsonDecode(processedMsg.payload);
+            originalMsgId = adminAckData['message_id'] as String;
+          } catch (_) {}
+        }
+        await LocalStorageService.updateDeliveryStatus(originalMsgId, 'delivered_to_admin');
         notifyListeners();
       }
 
@@ -531,6 +591,16 @@ class MeshService extends ChangeNotifier {
         // For now, let's keep it until TTL or next sync.
       }
     }
+    
+    // Also opportunistically retry unconfirmed/pending messages that require ACK
+    final awaiting = LocalStorageService.getMessagesAwaitingAck();
+    for (var msg in awaiting) {
+       if (!msg.pathTrace.contains(endpointToUserId[newEndpointId])) {
+         // Mark as relayed again and retransmit
+         await LocalStorageService.updateDeliveryStatus(msg.id, 'relayed');
+         await _sendBytes(newEndpointId, msg);
+       }
+    }
   }
 
   // ─── Security Helpers ───
@@ -552,10 +622,12 @@ class MeshService extends ChangeNotifier {
         payload: encryptedPayload,
         timestamp: msg.timestamp,
         type: msg.type,
-        isDelivered: msg.isDelivered,
+        deliveryStatus: msg.deliveryStatus,
         hopCount: msg.hopCount,
         pathTrace: msg.pathTrace,
         isEncrypted: true,
+        senderName: msg.senderName,
+        ackRequired: msg.ackRequired,
       );
     } catch (e) {
       debugPrint('[Mesh] Encryption error: $e');
@@ -583,10 +655,12 @@ class MeshService extends ChangeNotifier {
         payload: utf8.decode(clearText),
         timestamp: msg.timestamp,
         type: msg.type,
-        isDelivered: msg.isDelivered,
+        deliveryStatus: msg.deliveryStatus,
         hopCount: msg.hopCount,
         pathTrace: msg.pathTrace,
         isEncrypted: false,
+        senderName: msg.senderName,
+        ackRequired: msg.ackRequired,
       );
     } catch (e) {
       debugPrint('[Mesh] Decryption error: $e');
@@ -595,13 +669,21 @@ class MeshService extends ChangeNotifier {
   }
 
   Future<void> _sendAdminReceipt(MeshMessage originalMsg) async {
+    final payloadJson = jsonEncode({
+      'message_id': originalMsg.id,
+      'admin_id': userId,
+      'ack_timestamp': DateTime.now().toIso8601String(),
+      'status': 'received_by_admin',
+    });
+    
     final receipt = MeshMessage(
       id: const Uuid().v4(),
       senderId: userId, // I am the admin
+      senderName: userName,
       receiverId: originalMsg.senderId,
-      payload: originalMsg.id, // Payload is the original message ID
+      payload: payloadJson, // Payload is the original message ID
       timestamp: DateTime.now(),
-      type: 'admin_receipt',
+      type: 'admin_ack',
       pathTrace: [userId],
       hopCount: 0,
     );
@@ -616,7 +698,7 @@ class MeshService extends ChangeNotifier {
     final msgs = LocalStorageService.getMessagesFor(peerUserId);
     int sentCount = 0;
     for (final m in msgs) {
-      if (m.senderId == userId && !m.isDelivered && m.type == 'chat') {
+      if (m.senderId == userId && m.deliveryStatus != 'delivered_to_admin' && m.type == 'chat') {
         await _sendBytes(endpointId, m);
         sentCount++;
       }

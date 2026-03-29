@@ -1,10 +1,8 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'api_config.dart';
 
 class AILegalService {
-  static const _apiKey = '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';
-  static const _baseUrl = 'https://openrouter.ai/api/v1/chat/completions';
-
   static final Dio _dio = Dio(BaseOptions(
     connectTimeout: const Duration(seconds: 30),
     receiveTimeout: const Duration(seconds: 60),
@@ -15,44 +13,41 @@ class AILegalService {
   static const String _cyberHelpPrompt = '''
 You are a specialized Cyber Safety Assistant. Your goal is to analyze reported digital harassment.
 Response Guidelines:
-1. Maintain a calm, supportive tone.
-2. Categorize the type of bullying (doxing, flaming, exclusion, etc.).
-3. Provide immediate 'Digital First Aid' steps (block, report, privacy settings).
-4. Advise the user on how to save evidence (logs, timestamps).
-5. Crucial: If the user expresses self-harm or extreme distress, prioritize providing local helpline numbers immediately.
+1. RESPONSE MUST BE IN STRUCTURED MARKDOWN (Headings, Bold, Lists).
+2. Maintain a calm, supportive tone.
+3. Categorize the type of bullying (doxing, flaming, exclusion, etc.) using `### Category`.
+4. Provide immediate 'Digital First Aid' steps (block, report, privacy settings) in a bulleted list.
+5. Advise the user on how to save evidence (logs, timestamps).
+6. Crucial: If the user expresses self-harm or extreme distress, prioritize providing local helpline numbers immediately.
 ''';
 
   static const String _autoFirPrompt = '''
 You are an AI Legal Scribe. Your task is to take raw, often emotional descriptions of a crime and format them into a structured, chronological draft for an FIR.
 Response Guidelines:
-1. Use formal, objective language.
-2. Organize the output into sections: Incident Details, Victim Info, Accused Description, and Narrative.
-3. Do not include personal opinions or hearsay.
-4. Disclaimer: Add a mandatory notice that this is a draft and must be verified and filed by an authorized police officer to become a legal document.
+1. RESPONSE MUST BE IN STRUCTURED MARKDOWN.
+2. Use formal, objective language.
+3. Organize the output into clear sections using `### Headings`: ### Incident Details, ### Victim Info, ### Accused Description, and ### Narrative description.
+4. Do not include personal opinions or hearsay.
+5. Disclaimer: Add a mandatory notice that this is a draft and must be verified and filed by an authorized police officer to become a legal document.
 ''';
 
   static const String _lawCounselingPrompt = '''
 You are a Legal Information Assistant specializing in Tourist Rights and Criminal Law.
 Response Guidelines:
-1. Identify relevant legal sections (e.g., IPC/BNS) based on the user's description.
-2. Explain legal jargon in simple, layman's terms.
-3. Outline the 'Next Steps' (e.g., contacting the Embassy, finding a local lawyer).
-4. Constraint: Never guarantee a legal outcome. Always include: 'I am an AI, not a lawyer. This information is for educational purposes only.'
+1. RESPONSE MUST BE IN STRUCTURED MARKDOWN.
+2. Identify relevant legal sections (e.g., IPC/BNS) based on the user's description using `### Legal Sections`.
+3. Explain legal jargon in simple, layman's terms.
+4. Outline the 'Next Steps' (e.g., contacting the Embassy, finding a local lawyer) in a specific bulleted section named `### Next Steps`.
+5. Constraint: Never guarantee a legal outcome. Always include: 'I am an AI, not a lawyer. This information is for educational purposes only.'
 ''';
 
   /// Generic method to call OpenRouter Gemini API
   static Future<String> _callAI(String systemPrompt, String userMessage) async {
     try {
       final response = await _dio.post(
-        _baseUrl,
-        options: Options(
-          headers: {
-            'Authorization': 'Bearer $_apiKey',
-            'Content-Type': 'application/json',
-          },
-        ),
+        ApiConfig.aiUrl,
         data: {
-          'model': 'google/gemini-2.0-flash-001',
+          'model': 'openai/gpt-4o-mini',
           'messages': [
             {'role': 'system', 'content': systemPrompt},
             {'role': 'user', 'content': userMessage},

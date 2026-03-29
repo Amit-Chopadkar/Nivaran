@@ -7,8 +7,8 @@ import 'dart:io' show Platform;
 
 class AuthService extends ChangeNotifier {
   final Dio _dio = Dio(BaseOptions(
-    connectTimeout: const Duration(seconds: 60),
-    receiveTimeout: const Duration(seconds: 60),
+    connectTimeout: const Duration(seconds: 180),
+    receiveTimeout: const Duration(seconds: 180),
   ));
   
   static String get _baseUrl => ApiConfig.authUrl;

@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/foundation.dart';
 
@@ -95,21 +97,21 @@ class SupabaseService {
   // 2. Log SOS Event
   static Future<Map<String, dynamic>> logSOSEvent({
     required String userEmail,
-    required String userName,
     required String type,
     required double latitude,
     required double longitude,
-    required List<String> meshPath,
     String? blockchainHash,
+    DateTime? createdAt,
   }) async {
     try {
       final data = {
         'user_email': userEmail,
         'type': type.toLowerCase(),
+        'status': 'active',
         'latitude': latitude,
         'longitude': longitude,
         'blockchain_hash': blockchainHash,
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': (createdAt ?? DateTime.now()).toUtc().toIso8601String(),
       };
       
       final response = await _supabase.from('sos_logs').insert(data).select();
@@ -123,6 +125,54 @@ class SupabaseService {
     } catch (e) {
       debugPrint('Supabase Critical Error (logSOSEvent): $e');
       return {'success': false, 'error': e.toString()};
+    }
+  }
+
+  // 2c. Upload SOS Audio to Supabase Storage and update the log
+  static Future<String?> uploadSOSAudio({
+    required String logId,
+    required String filePath,
+  }) async {
+    try {
+      final file = await _readFileBytes(filePath);
+      if (file == null) {
+        debugPrint('Supabase: Audio file not found at $filePath');
+        return null;
+      }
+      
+      final storagePath = 'sos_audio/$logId.m4a';
+      
+      await _supabase.storage.from('evidence').uploadBinary(
+        storagePath,
+        file,
+        fileOptions: const FileOptions(contentType: 'audio/m4a', upsert: true),
+      );
+      
+      final publicUrl = _supabase.storage.from('evidence').getPublicUrl(storagePath);
+      
+      // Update sos_logs with the audio URL
+      await _supabase.from('sos_logs').update({
+        'audio_url': publicUrl,
+      }).eq('id', logId);
+      
+      debugPrint('Supabase: Audio uploaded and linked to SOS log $logId');
+      return publicUrl;
+    } catch (e) {
+      debugPrint('Supabase Error (uploadSOSAudio): $e');
+      return null;
+    }
+  }
+
+  static Future<Uint8List?> _readFileBytes(String path) async {
+    try {
+      final file = File(path);
+      if (await file.exists()) {
+        return await file.readAsBytes();
+      }
+      return null;
+    } catch (e) {
+      debugPrint('Error reading file: $e');
+      return null;
     }
   }
 

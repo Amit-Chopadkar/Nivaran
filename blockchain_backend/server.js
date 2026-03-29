@@ -299,10 +299,9 @@ app.get('/api/blockchain/sos-logs', async (req, res) => {
 });
 
 // --- Safest Route Logic ---
-const GRAPHHOPPER_API_KEY = process.env.GRAPHHOPPER_API_KEY;
-
 app.post('/api/routes/safest', async (req, res) => {
     try {
+        const GRAPHHOPPER_API_KEY = process.env.GRAPHHOPPER_API_KEY;
         const { origin, destination } = req.body;
         console.log(`\n🚀 [ROUTE] Calculating path: "${origin}" → "${destination}"`);
 
@@ -317,27 +316,25 @@ app.post('/api/routes/safest', async (req, res) => {
             return { lat, lng };
         };
 
-        // --- Geocode a place name via Nominatim ---
+        // --- Geocode a place name via GraphHopper ---
         const geocode = async (placeName) => {
             const cleanName = placeName.trim();
-            console.log(`🔍 Geocoding: "${cleanName}"`);
-            const geoRes = await axios.get('https://nominatim.openstreetmap.org/search', {
-                params: { q: `${cleanName}, Nashik, India`, format: 'json', limit: 1 },
-                headers: { 'User-Agent': 'SafeHerApp/1.0' }
+            console.log(`🔍 Geocoding via GraphHopper: "${cleanName}"`);
+            const geoRes = await axios.get('https://graphhopper.com/api/1/geocode', {
+                params: { q: `${cleanName}, Nashik, India`, limit: 1, key: GRAPHHOPPER_API_KEY }
             });
-            if (!geoRes.data?.length) {
+            if (!geoRes.data?.hits?.length) {
                 // Fallback without strict Nashik restriction
-                const geoFallback = await axios.get('https://nominatim.openstreetmap.org/search', {
-                    params: { q: cleanName, format: 'json', limit: 1 },
-                    headers: { 'User-Agent': 'SafeHerApp/1.0' }
+                const geoFallback = await axios.get('https://graphhopper.com/api/1/geocode', {
+                    params: { q: cleanName, limit: 1, key: GRAPHHOPPER_API_KEY }
                 });
-                if (!geoFallback.data?.length) throw new Error(`Geocoding failed for "${cleanName}"`);
-                const { lat, lon } = geoFallback.data[0];
-                return { lat: parseFloat(lat), lng: parseFloat(lon) };
+                if (!geoFallback.data?.hits?.length) throw new Error(`Geocoding failed for "${cleanName}"`);
+                const { lat, lng } = geoFallback.data.hits[0].point;
+                return { lat, lng };
             }
-            const { lat, lon } = geoRes.data[0];
-            console.log(`✅ Geocoded "${cleanName}" → [${lat},${lon}]`);
-            return { lat: parseFloat(lat), lng: parseFloat(lon) };
+            const { lat, lng } = geoRes.data.hits[0].point;
+            console.log(`✅ Geocoded "${cleanName}" → [${lat},${lng}]`);
+            return { lat, lng };
         };
 
         // --- Resolve origin & destination ---

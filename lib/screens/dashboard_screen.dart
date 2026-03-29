@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -81,8 +82,8 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
             floating: true,
             automaticallyImplyLeading: false,
             backgroundColor: AppTheme.darkBg.withValues(alpha: 0.97),
-            expandedHeight: 150,
-            toolbarHeight: 150,
+            expandedHeight: 125,
+            toolbarHeight: 125,
             shape: const RoundedRectangleBorder(
               borderRadius: BorderRadius.vertical(
                 bottom: Radius.circular(32),
@@ -90,7 +91,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
             ),
             flexibleSpace: SafeArea(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
@@ -185,24 +186,22 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
                             ),
                           ),
 
-                          // Blockchain badge
-                          if (blockchain.isUserVerified) ...[
-                            const SizedBox(height: 3),
-                            Row(
-                              children: [
-                                Icon(Icons.verified_rounded, size: 10, color: AppTheme.safeGreen),
-                                const SizedBox(width: 3),
-                                Text(
-                                  'Logged on Polygon Blockchain',
-                                  style: GoogleFonts.nunito(
-                                    fontSize: 9,
-                                    color: AppTheme.safeGreen,
-                                    fontWeight: FontWeight.w700,
-                                  ),
+                          // Blockchain badge always visible
+                          const SizedBox(height: 3),
+                          Row(
+                            children: [
+                              Icon(Icons.verified_rounded, size: 10, color: AppTheme.safeGreen),
+                              const SizedBox(width: 3),
+                              Text(
+                                'Logged on Polygon Blockchain',
+                                style: GoogleFonts.nunito(
+                                  fontSize: 9,
+                                  color: AppTheme.safeGreen,
+                                  fontWeight: FontWeight.w700,
                                 ),
-                              ],
-                            ),
-                          ],
+                              ),
+                            ],
+                          ),
                         ],
                       ),
                     ),
@@ -354,9 +353,9 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
                     isMainScore: true,
                   ),
 
-                  // Column 2: Crowd Density
+                  // Column 2: Crowd Density (dynamic based on risk/location/time)
                   _buildStatColumn(
-                    'Medium',
+                    _getCrowdDensityLabel(service),
                     'crowd\ndensity',
                   ),
 
@@ -381,6 +380,59 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
         ),
       ),
     );
+  }
+
+  /// Returns a dynamic crowd density label based on current risk, time, and hotspot proximity
+  String _getCrowdDensityLabel(SafetyService service) {
+    final hour = DateTime.now().hour;
+    final riskScore = service.riskScore;
+    
+    // Base density from time of day (peak hours = more crowded)
+    double densityScore = 0;
+    if (hour >= 8 && hour <= 10) {
+      densityScore = 65; // Morning rush
+    } else if (hour >= 17 && hour <= 20) {
+      densityScore = 75; // Evening rush
+    } else if (hour >= 11 && hour <= 16) {
+      densityScore = 50; // Daytime moderate
+    } else if (hour >= 21 || hour <= 5) {
+      densityScore = 15; // Night - low
+    } else {
+      densityScore = 35; // Early morning/late evening
+    }
+    
+    // Adjust based on hotspot proximity (high risk = likely crowded area)
+    final hotspots = SafetyModels.getCrimeHotspots();
+    int nearbyHotspots = 0;
+    for (var hotspot in hotspots) {
+      final dist = _haversineDistanceKm(
+        service.currentLat, service.currentLng, 
+        hotspot.lat, hotspot.lng,
+      );
+      if (dist < 1.0) nearbyHotspots++;
+    }
+    densityScore += (nearbyHotspots * 8).clamp(0, 25);
+    
+    // Weekend adjustment
+    final weekday = DateTime.now().weekday;
+    if (weekday == DateTime.saturday || weekday == DateTime.sunday) {
+      densityScore += 10;
+    }
+    
+    // Clamp and classify
+    densityScore = densityScore.clamp(0, 100);
+    
+    if (densityScore <= 25) return 'Low';
+    if (densityScore <= 50) return 'Medium';
+    if (densityScore <= 75) return 'High';
+    return 'V. High';
+  }
+
+  double _haversineDistanceKm(double lat1, double lng1, double lat2, double lng2) {
+    const p = 0.017453292519943295;
+    final a = 0.5 - math.cos((lat2 - lat1) * p) / 2 +
+        math.cos(lat1 * p) * math.cos(lat2 * p) * (1 - math.cos((lng2 - lng1) * p)) / 2;
+    return 12742 * math.asin(math.sqrt(a));
   }
 
   Widget _buildStatColumn(String value, String label, {bool isMainScore = false, bool isWeather = false, WeatherService? weather, SafetyService? service}) {
@@ -1027,7 +1079,17 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
 
   void _showTripSafetyWarning(SafetyService service) {
     final isHighRisk = service.riskScore > 40;
-    final safePlaces = SafetyModels.getSafePlaces().take(3).toList();
+    final nearestPolice = service.getNearestSafePlaces(type: SafePlaceType.policeStation, limit: 1);
+    final otherSafe = service.getNearestSafePlaces(limit: 5);
+    final safePlaces = [...nearestPolice, ...otherSafe]
+        .fold<List<SafePlace>>([], (list, p) {
+          if (!list.any((existing) => existing.name == p.name)) {
+            list.add(p);
+          }
+          return list;
+        })
+        .take(3)
+        .toList();
 
     showModalBottomSheet(
       context: context,

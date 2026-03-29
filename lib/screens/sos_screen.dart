@@ -5,6 +5,8 @@ import 'dart:async';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme/app_theme.dart';
 import '../services/safety_service.dart';
+import '../services/mesh_service.dart';
+import '../services/mesh_call_service.dart';
 import 'auto_fir_screen.dart';
 
 class SOSScreen extends StatefulWidget {
@@ -83,11 +85,7 @@ class _SOSScreenState extends State<SOSScreen> with TickerProviderStateMixin {
   Future<void> _makePhoneCall(String phoneNumber) async {
     final Uri launchUri = Uri(scheme: 'tel', path: phoneNumber);
     try {
-      if (await canLaunchUrl(launchUri)) {
-        await launchUrl(launchUri, mode: LaunchMode.externalApplication);
-      } else {
-        debugPrint('Could not launch $launchUri');
-      }
+      await launchUrl(launchUri);
     } catch (e) {
       debugPrint('Launch Error: $e');
     }
@@ -103,6 +101,8 @@ class _SOSScreenState extends State<SOSScreen> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     final service = context.watch<SafetyService>();
+    final meshService = context.watch<MeshService>();
+    final meshCallService = context.watch<MeshCallService>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
@@ -164,46 +164,26 @@ class _SOSScreenState extends State<SOSScreen> with TickerProviderStateMixin {
               const SizedBox(height: 32),
               
               if (!service.isSOSActive) ...[
+                // Offline Calling Section
+                _buildOfflineCallingSection(meshService, meshCallService, isDark),
+                const SizedBox(height: 32),
+
                 // Emergency Contacts Grid
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'Emergency Contacts',
+                      'Emergency Helplines',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w700,
                         color: isDark ? Colors.white : Colors.black87,
                       ),
                     ),
-                    IconButton(
-                      onPressed: () => service.fetchContacts(),
-                      icon: Icon(Icons.refresh_rounded, color: isDark ? Colors.white70 : Colors.black54, size: 20),
-                      tooltip: 'Sync Contacts',
-                    ),
                   ],
                 ),
                 const SizedBox(height: 12),
-                if (service.emergencyContacts.isEmpty)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF2A2A3A) : const Color(0xFFF1F5F9),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Text(
-                      'No trusted contacts saved. Please add them in Settings.',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: isDark ? Colors.white70 : Colors.black54,
-                        fontStyle: FontStyle.italic,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  )
-                else
-                  _buildEmergencyList(service, isDark),
+                _buildEmergencyList(service, isDark),
                 
                 const SizedBox(height: 32),
                 
@@ -499,19 +479,6 @@ class _SOSScreenState extends State<SOSScreen> with TickerProviderStateMixin {
   Widget _buildEmergencyList(SafetyService service, bool isDark) {
     return Column(
       children: [
-        // User's specifically added Trusted Contacts
-        ...service.emergencyContacts.map((contact) => Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: _buildListCard(
-            number: contact.phone,
-            subtitle: contact.name,
-            icon: Icons.person_rounded,
-            iconColor: AppTheme.accentBlue,
-            isDark: isDark,
-            onTap: () => _makePhoneCall(contact.phone),
-          ),
-        )),
-        
         // National Emergency Numbers
         _buildListCard(
           number: '1091',
@@ -859,6 +826,247 @@ class _SOSScreenState extends State<SOSScreen> with TickerProviderStateMixin {
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildOfflineCallingSection(MeshService mesh, MeshCallService callService, bool isDark) {
+    if (callService.isActive || callService.isIncoming) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: callService.isIncoming 
+              ? [AppTheme.cautionYellow.withValues(alpha: 0.3), AppTheme.cautionYellow.withValues(alpha: 0.1)]
+              : [AppTheme.safeGreen.withValues(alpha: 0.3), AppTheme.safeGreen.withValues(alpha: 0.1)],
+          ),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: callService.isIncoming ? AppTheme.cautionYellow : AppTheme.safeGreen, width: 2),
+        ),
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: callService.isIncoming ? AppTheme.cautionYellow : AppTheme.safeGreen,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: (callService.isIncoming ? AppTheme.cautionYellow : AppTheme.safeGreen).withValues(alpha: 0.4),
+                    blurRadius: 20,
+                    spreadRadius: 4,
+                  )
+                ]
+              ),
+              child: Icon(
+                callService.isIncoming ? Icons.phone_callback_rounded : Icons.phone_in_talk_rounded,
+                color: Colors.white,
+                size: 40,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              callService.isIncoming ? 'Incoming SOS Call...' : 'Active Offline Call',
+              style: TextStyle(
+                color: isDark ? Colors.white : Colors.black87,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              callService.currentCallPeerName ?? 'Unknown Peer',
+              style: TextStyle(
+                color: isDark ? Colors.white : Colors.black87,
+                fontSize: 24,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (callService.isIncoming) ...[
+                  FloatingActionButton(
+                    heroTag: 'accept_call',
+                    backgroundColor: AppTheme.safeGreen,
+                    onPressed: () => callService.acceptCall(),
+                    elevation: 0,
+                    child: const Icon(Icons.call, color: Colors.white, size: 28),
+                  ),
+                  const SizedBox(width: 32),
+                ],
+                FloatingActionButton(
+                  heroTag: 'end_call',
+                  backgroundColor: AppTheme.dangerRed,
+                  onPressed: () => callService.endCall(),
+                  elevation: 0,
+                  child: const Icon(Icons.call_end, color: Colors.white, size: 28),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Offline Calling',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: isDark ? Colors.white : Colors.black87,
+              ),
+            ),
+            TextButton.icon(
+              onPressed: () {
+                if (mesh.nearbyEndpoints.isEmpty) {
+                  mesh.init();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Scanning for peers via WiFi/Bluetooth...'),
+                      backgroundColor: AppTheme.safeGreen,
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                } else {
+                  mesh.stopAll();
+                  Future.delayed(const Duration(milliseconds: 500), () => mesh.init());
+                }
+              },
+              icon: const Icon(Icons.wifi_tethering_rounded, size: 18, color: AppTheme.primaryPurple),
+              label: const Text('Scan', style: TextStyle(color: AppTheme.primaryPurple, fontWeight: FontWeight.w700)),
+            )
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Call nearby peers directly via WiFi Hotspot/Bluetooth (No internet required). Helps when networks are down.',
+          style: TextStyle(
+            fontSize: 13,
+            color: Theme.of(context).textTheme.bodySmall?.color,
+            height: 1.4,
+          ),
+        ),
+        const SizedBox(height: 16),
+        
+        if (mesh.connectedPeers.isEmpty && mesh.nearbyEndpoints.isEmpty)
+          Container(
+             padding: const EdgeInsets.all(16),
+             decoration: BoxDecoration(
+               color: isDark ? const Color(0xFF1E1E2C) : const Color(0xFFF8F7FF),
+               borderRadius: BorderRadius.circular(16),
+               border: Border.all(color: AppTheme.primaryPurple.withValues(alpha: 0.1)),
+             ),
+             child: Row(
+               children: [
+                 Icon(Icons.wifi_find_rounded, color: AppTheme.primaryPurple.withValues(alpha: 0.8), size: 28),
+                 const SizedBox(width: 16),
+                 Expanded(
+                   child: Text(
+                     'No peers found.\nTap Scan to connect to the secure offline mesh network.',
+                     style: TextStyle(fontSize: 13, color: isDark ? Colors.white70 : Colors.black87, height: 1.4),
+                   ),
+                 ),
+               ],
+             ),
+          )
+        else ...[
+          // Discovered endpoints (not yet fully connected)
+          ...mesh.nearbyEndpoints.entries.where((e) => !mesh.connectedPeers.containsKey(e.key)).map((e) {
+               return _buildPeerCard(e.key, e.value, isDark, false, callService);
+          }),
+          // Fully Connected peers
+          ...mesh.connectedPeers.entries.map((e) {
+               return _buildPeerCard(e.key, e.value, isDark, true, callService);
+          }),
+        ]
+      ],
+    );
+  }
+
+  Widget _buildPeerCard(String peerId, String peerName, bool isDark, bool isConnected, MeshCallService callService) {
+    final bgColor = isDark ? const Color(0xFF1E1E2C) : Colors.white;
+    final shadowColor = isDark ? Colors.black.withValues(alpha: 0.3) : Colors.black.withValues(alpha: 0.05);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(color: shadowColor, blurRadius: 15, offset: const Offset(0, 4)),
+        ],
+        border: Border.all(color: isConnected ? AppTheme.safeGreen.withValues(alpha: 0.3) : Colors.transparent),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: isConnected ? AppTheme.safeGreen.withValues(alpha: 0.15) : AppTheme.accentBlue.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              isConnected ? Icons.wifi_protected_setup_rounded : Icons.wifi_find_rounded, 
+              color: isConnected ? AppTheme.safeGreen : AppTheme.accentBlue,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  peerName,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: isDark ? Colors.white : Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  isConnected ? 'Connected • Ready to Call' : 'Discovered • Connecting...',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: isConnected ? AppTheme.safeGreen : Theme.of(context).textTheme.bodySmall?.color,
+                    fontWeight: isConnected ? FontWeight.w600 : FontWeight.w400,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (isConnected)
+            GestureDetector(
+              onTap: () {
+                callService.startCall(peerId);
+              },
+              child: Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: AppTheme.safeGreen.withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.call, size: 24, color: AppTheme.safeGreen),
+              ),
+            )
+          else
+            const SizedBox(
+              width: 48, height: 48,
+              child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))),
+            ),
+        ],
       ),
     );
   }

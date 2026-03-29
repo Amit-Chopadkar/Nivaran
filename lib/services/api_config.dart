@@ -26,4 +26,5 @@ class ApiConfig {
   static String get sosUrl => '$baseUrl/api/sos';
   static String get nightModeUrl => '$baseUrl/api/night-mode';
   static String get zonesUrl => '$baseUrl/api/zones';
+  static String get aiUrl => '$baseUrl/api/ai/chat';
 }

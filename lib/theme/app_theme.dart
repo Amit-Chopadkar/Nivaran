@@ -219,6 +219,11 @@ class AppTheme {
         unselectedItemColor: Color(0xFF64748B),
         type: BottomNavigationBarType.fixed,
       ),
+      snackBarTheme: SnackBarThemeData(
+        backgroundColor: const Color(0xFF0F172A),
+        contentTextStyle: const TextStyle(color: Colors.white),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
     );
   }
 
@@ -311,6 +316,11 @@ class AppTheme {
         selectedItemColor: primaryPurple,
         unselectedItemColor: Color(0xFF64748B),
         type: BottomNavigationBarType.fixed,
+      ),
+      snackBarTheme: SnackBarThemeData(
+        backgroundColor: const Color(0xFF1E2D4A),
+        contentTextStyle: const TextStyle(color: Colors.white),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
   }

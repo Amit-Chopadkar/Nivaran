@@ -92,8 +92,8 @@ class NightModeProvider with ChangeNotifier {
   Timer? _riskRefreshTimer;
   
   final dio.Dio _dio = dio.Dio(dio.BaseOptions(
-    connectTimeout: const Duration(seconds: 10),
-    receiveTimeout: const Duration(seconds: 10),
+    connectTimeout: const Duration(seconds: 180),
+    receiveTimeout: const Duration(seconds: 180),
   ));
 
   static String get _backendUrl => ApiConfig.baseUrl;

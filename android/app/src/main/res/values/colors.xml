@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Matches app's dark background: AppTheme.darkBg = 0xFF0F0F1A -->
+    <color name="splash_bg">#0F0F1A</color>
+</resources>

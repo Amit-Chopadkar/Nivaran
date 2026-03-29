@@ -67,7 +67,7 @@ class _MeshChatScreenState extends State<MeshChatScreen> {
           ],
         ),
         backgroundColor: AppTheme.darkBg,
-        iconTheme: const IconThemeData(color: Colors.white),
+        iconTheme: IconThemeData(color: AppTheme.textPrimary),
         actions: [
           if (!isGroup && peerEndpointId != null)
             IconButton(
@@ -144,6 +144,9 @@ class _MeshChatScreenState extends State<MeshChatScreen> {
   Widget _buildMessageBubble(MeshMessage msg, String myId, bool isGroup) {
     final isMe = msg.senderId == myId;
     final isAdmin = msg.senderId == 'admin';
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textColor = isMe ? Colors.white : (isDark ? Colors.white : Colors.black87);
+    final timeColor = isMe ? Colors.white.withValues(alpha: 0.7) : (isDark ? Colors.white.withValues(alpha: 0.5) : Colors.black54);
 
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
@@ -170,7 +173,7 @@ class _MeshChatScreenState extends State<MeshChatScreen> {
               ),
             Text(
               msg.payload,
-              style: const TextStyle(color: Colors.white, fontSize: 14),
+              style: TextStyle(color: textColor, fontSize: 14),
             ),
             const SizedBox(height: 4),
             Row(
@@ -178,16 +181,21 @@ class _MeshChatScreenState extends State<MeshChatScreen> {
               children: [
                 Text(
                   "${msg.timestamp.hour}:${msg.timestamp.minute.toString().padLeft(2, '0')}",
-                  style: TextStyle(fontSize: 10, color: Colors.white.withValues(alpha: 0.5)),
+                  style: TextStyle(fontSize: 10, color: timeColor),
                 ),
                 if (isMe) ...[
                   const SizedBox(width: 4),
-                  Icon(
-                    msg.isDelivered ? Icons.done_all : Icons.done,
-                    size: 12,
-                    color: msg.isDelivered ? AppTheme.accentBlue : Colors.white.withValues(alpha: 0.5),
-                  ),
-                  if (msg.isDelivered)
+                  if (msg.deliveryStatus == 'pending')
+                    Icon(Icons.access_time, size: 12, color: timeColor)
+                  else if (msg.deliveryStatus == 'unconfirmed')
+                    const Icon(Icons.error_outline, size: 12, color: Colors.orange)
+                  else
+                    Icon(
+                      msg.deliveryStatus == 'delivered_to_admin' ? Icons.done_all : Icons.done,
+                      size: 12,
+                      color: msg.deliveryStatus == 'delivered_to_admin' ? AppTheme.accentBlue : timeColor,
+                    ),
+                  if (msg.deliveryStatus == 'delivered_to_admin')
                     const Padding(
                       padding: EdgeInsets.only(left: 4),
                       child: Text(
@@ -195,12 +203,17 @@ class _MeshChatScreenState extends State<MeshChatScreen> {
                         style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: AppTheme.accentBlue),
                       ),
                     ),
+                  if (msg.deliveryStatus == 'relayed')
+                    Padding(
+                      padding: const EdgeInsets.only(left: 4),
+                      child: Text('(relayed)', style: TextStyle(fontSize: 8, color: timeColor)),
+                    ),
                 ],
                 if (!isMe && msg.hopCount > 0) ...[
                   const SizedBox(width: 8),
                   Text(
                     'Relayed: ${msg.hopCount} hops',
-                    style: TextStyle(fontSize: 9, color: Colors.white.withValues(alpha: 0.4), fontStyle: FontStyle.italic),
+                    style: TextStyle(fontSize: 9, color: timeColor, fontStyle: FontStyle.italic),
                   ),
                 ],
               ],
@@ -223,7 +236,7 @@ class _MeshChatScreenState extends State<MeshChatScreen> {
           Expanded(
             child: TextField(
               controller: _messageController,
-              style: const TextStyle(color: Colors.white),
+              style: TextStyle(color: AppTheme.textPrimary),
               decoration: InputDecoration(
                 hintText: widget.peerId == 'broadcast' ? 'Type a secure message...' : 'Type an offline message...',
                 hintStyle: TextStyle(color: AppTheme.textMuted),
@@ -252,10 +265,12 @@ class _MeshChatScreenState extends State<MeshChatScreen> {
                 final msg = MeshMessage(
                   id: const Uuid().v4(),
                   senderId: mesh.userId,
+                  senderName: mesh.userName,
                   receiverId: widget.peerId,
                   payload: text,
                   timestamp: DateTime.now(),
                   type: 'chat',
+                  ackRequired: true,
                 );
 
                 _messageController.clear();

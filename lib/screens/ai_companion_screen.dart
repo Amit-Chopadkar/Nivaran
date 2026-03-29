@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'dart:async';
 import 'dart:math' as math;
+import 'package:dio/dio.dart';
 import '../theme/app_theme.dart';
 import '../services/safety_service.dart';
+import '../services/api_config.dart';
 
 class AICompanionScreen extends StatefulWidget {
   const AICompanionScreen({super.key});
@@ -12,11 +14,17 @@ class AICompanionScreen extends StatefulWidget {
   State<AICompanionScreen> createState() => _AICompanionScreenState();
 }
 
-class _AICompanionScreenState extends State<AICompanionScreen> with TickerProviderStateMixin {
+class _AICompanionScreenState extends State<AICompanionScreen> with TickerProviderStateMixin, WidgetsBindingObserver {
   late AnimationController _waveController;
   late AnimationController _glowController;
   final _messageController = TextEditingController();
   final _scrollController = ScrollController();
+  bool _isAITyping = false;
+  
+  final Dio _dio = Dio(BaseOptions(
+    connectTimeout: const Duration(seconds: 30),
+    receiveTimeout: const Duration(seconds: 60),
+  ));
   
   final List<_ChatMessage> _messages = [
     _ChatMessage(
@@ -26,20 +34,13 @@ class _AICompanionScreenState extends State<AICompanionScreen> with TickerProvid
     ),
   ];
 
-  final List<String> _aiResponses = [
-    "I'm monitoring your surroundings. Everything looks safe right now. Your risk score is low. 🛡️",
-    "I notice you're in a well-lit area. That's great! I'll keep tracking your location.",
-    "Stay alert! I've detected slightly higher activity in your area. Would you like me to alert your contacts?",
-    "Your trusted contacts can see your location. Would you like me to send them a check-in message?",
-    "I'm here with you. Remember, you can say 'help me' at any time to trigger an emergency alert.",
-    "Based on current data, the safest route is via the main road. Would you like navigation directions?",
-    "I've detected that you've been stationary for a while. Everything okay? Tap to confirm you're safe.",
-    "Night mode activated. I've enhanced monitoring and your emergency contacts have been notified of your route.",
-  ];
+  // Conversation history for context
+  final List<Map<String, String>> _conversationHistory = [];
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _waveController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 3000),
@@ -50,11 +51,115 @@ class _AICompanionScreenState extends State<AICompanionScreen> with TickerProvid
     )..repeat(reverse: true);
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      if (!_waveController.isAnimating) _waveController.repeat();
+      if (!_glowController.isAnimating) _glowController.repeat(reverse: true);
+    } else {
+      _waveController.stop();
+      _glowController.stop();
+    }
+  }
+
+  String _buildSystemPrompt(SafetyService service) {
+    final hour = DateTime.now().hour;
+    String timeContext = '';
+    if (hour >= 22 || hour <= 5) {
+      timeContext = 'It is late night, which is a high-risk period.';
+    } else if (hour >= 19) {
+      timeContext = 'It is evening time, stay cautious.';
+    } else {
+      timeContext = 'It is daytime.';
+    }
+
+    final riskLevel = service.currentRiskAssessment?.riskLevel ?? 'Unknown';
+    final riskScore = service.riskScore;
+    final isSOSActive = service.isSOSActive;
+    final isTripActive = service.isTripActive;
+
+    return '''
+You are NIVARAN AI Guard — a personal safety companion for women in India. You are embedded in a mobile safety app.
+
+CURRENT USER CONTEXT:
+- Risk Score: $riskScore/100 (Risk Level: $riskLevel)
+- $timeContext
+- SOS Active: ${isSOSActive ? 'YES — user may be in immediate danger' : 'No'}
+- Trip Active: ${isTripActive ? 'YES — user is currently on a monitored trip' : 'No'}
+- Location: Lat ${service.currentLat.toStringAsFixed(4)}, Lng ${service.currentLng.toStringAsFixed(4)}
+
+YOUR BEHAVIOR:
+1. Be warm, empathetic, and reassuring but never dismissive of fears.
+2. If the user expresses fear or danger, take it seriously. Suggest triggering SOS, sharing location with contacts, or moving to a safe place.
+3. Provide practical safety tips relevant to their current context (time, risk level, location).
+4. If asked about legal help, mention the Auto FIR feature and Law Counseling available in the app.
+5. Keep responses concise (2-4 sentences max) and conversational.
+6. If risk is high or SOS is active, be proactive and urgent in your guidance.
+7. You can reference app features: SOS button, Fake Call, Trip Monitor, Evidence Vault, Mesh Network.
+8. Never reveal you are an AI model or discuss your training. You are "NIVARAN AI Guard".
+9. Use relevant emojis sparingly to keep the tone friendly.
+''';
+  }
+
+  Future<String> _getAIResponse(String userMessage, SafetyService service) async {
+    try {
+      // Add user message to history
+      _conversationHistory.add({'role': 'user', 'content': userMessage});
+      
+      // Keep only last 10 exchanges for context window
+      if (_conversationHistory.length > 20) {
+        _conversationHistory.removeRange(0, _conversationHistory.length - 20);
+      }
+
+      final messages = [
+        {'role': 'system', 'content': _buildSystemPrompt(service)},
+        ..._conversationHistory,
+      ];
+
+      final response = await _dio.post(
+        ApiConfig.aiUrl,
+        data: {
+          'model': 'openai/gpt-4o-mini', 
+          'messages': messages,
+          'max_tokens': 300,
+          'temperature': 0.8,
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final choices = response.data['choices'] as List?;
+        if (choices != null && choices.isNotEmpty) {
+          final aiText = choices[0]['message']['content'] as String? ?? '';
+          if (aiText.isNotEmpty) {
+            _conversationHistory.add({'role': 'assistant', 'content': aiText});
+            return aiText;
+          }
+        }
+      }
+      return "Sorry, I received an invalid response from the safety server.";
+    } on DioException catch (e) {
+      debugPrint('AI Companion Dio Error: ${e.response?.data ?? e.message}');
+      String errMsg = 'API Error';
+      if (e.response != null && e.response!.data is Map) {
+        errMsg = e.response!.data['error']?['message'] ?? e.response!.data.toString();
+      } else {
+        errMsg = e.message ?? 'Unknown network error';
+      }
+      return "⚠️ System Alert: I couldn't process your request right now due to a network or key issue. ($errMsg)";
+    } catch (e) {
+      debugPrint('AI Companion error: $e');
+      return "⚠️ System Alert: Internal processing error ($e). Please use standard emergency options if needed.";
+    }
+  }
+
   void _sendMessage(String text) {
     if (text.trim().isEmpty) return;
     
+    final service = Provider.of<SafetyService>(context, listen: false);
+    
     setState(() {
       _messages.add(_ChatMessage(text: text, isUser: true, timestamp: DateTime.now()));
+      _isAITyping = true;
     });
     _messageController.clear();
     
@@ -69,13 +174,13 @@ class _AICompanionScreenState extends State<AICompanionScreen> with TickerProvid
       }
     });
 
-    // Simulate AI response
-    Future.delayed(const Duration(milliseconds: 1500), () {
+    // Get real AI response
+    _getAIResponse(text, service).then((response) {
       if (mounted) {
-        final random = math.Random();
         setState(() {
+          _isAITyping = false;
           _messages.add(_ChatMessage(
-            text: _aiResponses[random.nextInt(_aiResponses.length)],
+            text: response,
             isUser: false,
             timestamp: DateTime.now(),
           ));
@@ -95,10 +200,12 @@ class _AICompanionScreenState extends State<AICompanionScreen> with TickerProvid
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _waveController.dispose();
     _glowController.dispose();
     _messageController.dispose();
     _scrollController.dispose();
+    _dio.close();
     super.dispose();
   }
 
@@ -207,8 +314,11 @@ class _AICompanionScreenState extends State<AICompanionScreen> with TickerProvid
             child: ListView.builder(
               controller: _scrollController,
               padding: const EdgeInsets.all(16),
-              itemCount: _messages.length,
+              itemCount: _messages.length + (_isAITyping ? 1 : 0),
               itemBuilder: (context, index) {
+                if (index == _messages.length && _isAITyping) {
+                  return _buildTypingIndicator();
+                }
                 final msg = _messages[index];
                 return _buildMessageBubble(msg);
               },
@@ -282,6 +392,57 @@ class _AICompanionScreenState extends State<AICompanionScreen> with TickerProvid
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildTypingIndicator() {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppTheme.darkCard,
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(16),
+            topRight: Radius.circular(16),
+            bottomLeft: Radius.circular(4),
+            bottomRight: Radius.circular(16),
+          ),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildDot(0),
+            const SizedBox(width: 4),
+            _buildDot(1),
+            const SizedBox(width: 4),
+            _buildDot(2),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDot(int index) {
+    return AnimatedBuilder(
+      animation: _waveController,
+      builder: (context, child) {
+        final progress = (_waveController.value * 3 - index).clamp(0.0, 1.0);
+        final bounce = math.sin(progress * math.pi);
+        return Transform.translate(
+          offset: Offset(0, -bounce * 4),
+          child: Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: AppTheme.primaryPurple.withValues(alpha: 0.4 + bounce * 0.6),
+            ),
+          ),
+        );
+      },
     );
   }
 

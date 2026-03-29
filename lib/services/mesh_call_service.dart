@@ -13,13 +13,19 @@ class MeshCallService extends ChangeNotifier {
   RTCPeerConnection? _peerConnection;
   MediaStream? _localStream;
   MediaStream? _remoteStream;
+  final RTCVideoRenderer _remoteRenderer = RTCVideoRenderer();
 
-  String? _currentCallPeerId;
+  String? _currentCallEndpointId;
+  String? _currentCallUserId;
   String? _currentCallPeerName;
   bool _isIncoming = false;
   bool _isActive = false;
 
-  String? get currentCallPeerId => _currentCallPeerId;
+  final List<RTCIceCandidate> _remoteCandidatesQueue = [];
+  bool _isRemoteDescriptionSet = false;
+
+  String? get currentCallEndpointId => _currentCallEndpointId;
+  String? get currentCallUserId => _currentCallUserId;
   String? get currentCallPeerName => _currentCallPeerName;
   bool get isIncoming => _isIncoming;
   bool get isActive => _isActive;
@@ -28,10 +34,12 @@ class MeshCallService extends ChangeNotifier {
 
   MeshCallService(this.meshService) {
     _signalingSub = meshService.signalingStream.listen(_handleSignaling);
+    _remoteRenderer.initialize();
   }
 
   @override
   void dispose() {
+    _remoteRenderer.dispose();
     _signalingSub.cancel();
     _endCallLocally();
     super.dispose();
@@ -41,6 +49,10 @@ class MeshCallService extends ChangeNotifier {
     if (msg.receiverId != meshService.userId) return; // ignore if not for us
 
     final payload = jsonDecode(msg.payload);
+    final senderUserId = msg.senderId;
+    final senderEndpointId = meshService.userIdToEndpoint[senderUserId];
+    
+    if (senderEndpointId == null) return;
 
     switch (msg.type) {
       case 'call_offer':
@@ -49,59 +61,88 @@ class MeshCallService extends ChangeNotifier {
           return;
         }
         _isIncoming = true;
-        _currentCallPeerId = msg.senderId;
-        _currentCallPeerName = meshService.connectedPeers[msg.senderId] ?? 'Unknown';
+        _currentCallEndpointId = senderEndpointId;
+        _currentCallUserId = senderUserId;
+        _currentCallPeerName = meshService.connectedPeers[senderEndpointId] ?? 'Unknown';
+        _remoteCandidatesQueue.clear();
+        _isRemoteDescriptionSet = false;
         notifyListeners();
 
         await _createPeerConnection();
         await _peerConnection!.setRemoteDescription(
           RTCSessionDescription(payload['sdp'], payload['type']),
         );
+        _isRemoteDescriptionSet = true;
+        _drainRemoteCandidates();
         break;
       case 'call_answer':
-        if (_currentCallPeerId == msg.senderId && _peerConnection != null) {
+        if (_currentCallUserId == senderUserId && _peerConnection != null) {
           await _peerConnection!.setRemoteDescription(
             RTCSessionDescription(payload['sdp'], payload['type']),
           );
+          _isRemoteDescriptionSet = true;
+          _drainRemoteCandidates();
         }
         break;
       case 'ice_candidate':
-        if (_currentCallPeerId == msg.senderId && _peerConnection != null) {
-          await _peerConnection!.addCandidate(
-            RTCIceCandidate(
-              payload['candidate'],
-              payload['sdpMid'],
-              payload['sdpMLineIndex'],
-            ),
+        if (_currentCallUserId == senderUserId && _peerConnection != null) {
+          final candidate = RTCIceCandidate(
+            payload['candidate'],
+            payload['sdpMid'],
+            payload['sdpMLineIndex'],
           );
+          if (_isRemoteDescriptionSet) {
+            await _peerConnection!.addCandidate(candidate);
+          } else {
+            _remoteCandidatesQueue.add(candidate);
+          }
         }
         break;
       case 'call_end':
-        if (_currentCallPeerId == msg.senderId) {
+        if (_currentCallUserId == senderUserId) {
           _endCallLocally();
         }
         break;
     }
   }
 
-  Future<void> startCall(String peerId) async {
+  void _drainRemoteCandidates() {
+    for (var candidate in _remoteCandidatesQueue) {
+      _peerConnection?.addCandidate(candidate);
+    }
+    _remoteCandidatesQueue.clear();
+  }
+
+  Future<void> startCall(String endpointId) async {
+    final targetUserId = meshService.endpointToUserId[endpointId];
+    if (targetUserId == null) return;
+
     _isIncoming = false;
     _isActive = true;
-    _currentCallPeerId = peerId;
-    _currentCallPeerName = meshService.connectedPeers[peerId] ?? 'Unknown';
+    _currentCallEndpointId = endpointId;
+    _currentCallUserId = targetUserId;
+    _currentCallPeerName = meshService.connectedPeers[endpointId] ?? 'Unknown';
+    _remoteCandidatesQueue.clear();
+    _isRemoteDescriptionSet = false;
     notifyListeners();
 
     await _createPeerConnection();
 
-    final offer = await _peerConnection!.createOffer();
+    final offer = await _peerConnection!.createOffer({
+      'mandatory': {
+        'OfferToReceiveAudio': true,
+        'OfferToReceiveVideo': false,
+      },
+      'optional': [],
+    });
     await _peerConnection!.setLocalDescription(offer);
 
     await meshService.sendToEndpoint(
-      peerId,
+      endpointId,
       MeshMessage(
         id: const Uuid().v4(),
         senderId: meshService.userId,
-        receiverId: peerId,
+        receiverId: targetUserId,
         payload: jsonEncode(offer.toMap()),
         timestamp: DateTime.now(),
         type: 'call_offer',
@@ -110,6 +151,8 @@ class MeshCallService extends ChangeNotifier {
   }
 
   Future<void> acceptCall() async {
+    if (_currentCallEndpointId == null || _currentCallUserId == null) return;
+
     _isIncoming = false;
     _isActive = true;
     notifyListeners();
@@ -118,11 +161,11 @@ class MeshCallService extends ChangeNotifier {
     await _peerConnection!.setLocalDescription(answer);
 
     await meshService.sendToEndpoint(
-      _currentCallPeerId!,
+      _currentCallEndpointId!,
       MeshMessage(
         id: const Uuid().v4(),
         senderId: meshService.userId,
-        receiverId: _currentCallPeerId!,
+        receiverId: _currentCallUserId!,
         payload: jsonEncode(answer.toMap()),
         timestamp: DateTime.now(),
         type: 'call_answer',
@@ -131,13 +174,13 @@ class MeshCallService extends ChangeNotifier {
   }
 
   Future<void> endCall() async {
-    if (_currentCallPeerId != null) {
+    if (_currentCallEndpointId != null && _currentCallUserId != null) {
       await meshService.sendToEndpoint(
-        _currentCallPeerId!,
+        _currentCallEndpointId!,
         MeshMessage(
           id: const Uuid().v4(),
           senderId: meshService.userId,
-          receiverId: _currentCallPeerId!,
+          receiverId: _currentCallUserId!,
           payload: '{}',
           timestamp: DateTime.now(),
           type: 'call_end',
@@ -156,10 +199,20 @@ class MeshCallService extends ChangeNotifier {
     _peerConnection?.dispose();
     _peerConnection = null;
 
-    _currentCallPeerId = null;
+    _remoteRenderer.srcObject = null;
+    _remoteStream = null;
+
+    _currentCallEndpointId = null;
+    _currentCallUserId = null;
     _currentCallPeerName = null;
     _isIncoming = false;
     _isActive = false;
+
+    _remoteCandidatesQueue.clear();
+    _isRemoteDescriptionSet = false;
+
+    Helper.setSpeakerphoneOn(false);
+
     notifyListeners();
   }
 
@@ -168,19 +221,20 @@ class MeshCallService extends ChangeNotifier {
       'iceServers': [
         // Since it's P2P offline, we don't strictly need STUN/TURN,
         // local network ICE candidates usually suffice over WiFi direct.
-      ]
+      ],
+      'sdpSemantics': 'unified-plan',
     };
 
     _peerConnection = await createPeerConnection(configuration);
 
     _peerConnection!.onIceCandidate = (candidate) {
-      if (_currentCallPeerId != null) {
+      if (_currentCallEndpointId != null && _currentCallUserId != null) {
         meshService.sendToEndpoint(
-          _currentCallPeerId!,
+          _currentCallEndpointId!,
           MeshMessage(
             id: const Uuid().v4(),
             senderId: meshService.userId,
-            receiverId: _currentCallPeerId!,
+            receiverId: _currentCallUserId!,
             payload: jsonEncode(candidate.toMap()),
             timestamp: DateTime.now(),
             type: 'ice_candidate',
@@ -189,8 +243,30 @@ class MeshCallService extends ChangeNotifier {
       }
     };
 
+    _peerConnection!.onConnectionState = (state) {
+      debugPrint('[MeshCallService] WebRTC Connection State: $state');
+      if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
+        Helper.setSpeakerphoneOn(true);
+      }
+    };
+
+    _peerConnection!.onIceConnectionState = (state) {
+      debugPrint('[MeshCallService] ICE Connection State: $state');
+    };
+
+    _peerConnection!.onTrack = (event) {
+      if (event.track.kind == 'audio') {
+        _remoteStream = event.streams[0];
+        _remoteRenderer.srcObject = _remoteStream;
+        Helper.setSpeakerphoneOn(true);
+        notifyListeners();
+      }
+    };
+
     _peerConnection!.onAddStream = (stream) {
       _remoteStream = stream;
+      _remoteRenderer.srcObject = stream;
+      Helper.setSpeakerphoneOn(true);
       notifyListeners();
     };
 

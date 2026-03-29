@@ -23,17 +23,19 @@ class MeshMessageAdapter extends TypeAdapter<MeshMessage> {
       payload: fields[3] as String,
       timestamp: fields[4] as DateTime,
       type: fields[5] as String,
-      isDelivered: fields[6] as bool,
+      deliveryStatus: fields[6] as String,
       hopCount: fields[7] as int,
       pathTrace: (fields[8] as List).cast<String>(),
       isEncrypted: fields[9] as bool,
+      senderName: fields[10] as String,
+      ackRequired: fields[11] as bool,
     );
   }
 
   @override
   void write(BinaryWriter writer, MeshMessage obj) {
     writer
-      ..writeByte(10)
+      ..writeByte(12)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -47,13 +49,17 @@ class MeshMessageAdapter extends TypeAdapter<MeshMessage> {
       ..writeByte(5)
       ..write(obj.type)
       ..writeByte(6)
-      ..write(obj.isDelivered)
+      ..write(obj.deliveryStatus)
       ..writeByte(7)
       ..write(obj.hopCount)
       ..writeByte(8)
       ..write(obj.pathTrace)
       ..writeByte(9)
-      ..write(obj.isEncrypted);
+      ..write(obj.isEncrypted)
+      ..writeByte(10)
+      ..write(obj.senderName)
+      ..writeByte(11)
+      ..write(obj.ackRequired);
   }
 
   @override

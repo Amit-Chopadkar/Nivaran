@@ -13,10 +13,24 @@ class LocalStorageService {
     await Hive.initFlutter();
     Hive.registerAdapter(MeshMessageAdapter());
     Hive.registerAdapter(EvidenceAdapter());
-    await Hive.openBox<MeshMessage>(chatBoxName);
+    
+    // Attempt to open chatBox, wipe if schema mismatch
+    try {
+      await Hive.openBox<MeshMessage>(chatBoxName);
+    } catch (e) {
+      await Hive.deleteBoxFromDisk(chatBoxName);
+      await Hive.openBox<MeshMessage>(chatBoxName);
+    }
+
+    try {
+      await Hive.openBox<MeshMessage>(pendingRelayBoxName);
+    } catch (e) {
+      await Hive.deleteBoxFromDisk(pendingRelayBoxName);
+      await Hive.openBox<MeshMessage>(pendingRelayBoxName);
+    }
+
     await Hive.openBox<Evidence>(evidenceBoxName);
     await Hive.openBox<bool>(processedBoxName);
-    await Hive.openBox<MeshMessage>(pendingRelayBoxName);
     await Hive.openBox(settingsBoxName);
   }
 
@@ -26,18 +40,24 @@ class LocalStorageService {
     await chatBox.put(message.id, message);
   }
 
-  static Future<void> markAsDelivered(String messageId) async {
+  static Future<void> updateDeliveryStatus(String messageId, String status) async {
     final msg = chatBox.get(messageId);
     if (msg != null) {
-      msg.isDelivered = true;
+      msg.deliveryStatus = status;
       await msg.save();
     }
+  }
+
+  static List<MeshMessage> getMessagesAwaitingAck() {
+    return chatBox.values
+        .where((m) => m.ackRequired && (m.deliveryStatus == 'pending' || m.deliveryStatus == 'relayed' || m.deliveryStatus == 'unconfirmed'))
+        .toList();
   }
 
   static List<MeshMessage> getMessagesFor(String peerId) {
     final messages = chatBox.values
         .where((m) =>
-            (m.senderId == peerId || m.receiverId == peerId) &&
+            (m.senderId == peerId || m.receiverId == peerId || m.receiverId == 'broadcast') &&
             m.type == 'chat')
         .toList()
       ..sort((a, b) => a.timestamp.compareTo(b.timestamp));

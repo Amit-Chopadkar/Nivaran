@@ -10,7 +10,7 @@ class MeshCallScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final callService = context.watch<MeshCallService>();
 
-    if (callService.currentCallPeerId == null) {
+    if (callService.currentCallEndpointId == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (Navigator.canPop(context)) Navigator.pop(context);
       });

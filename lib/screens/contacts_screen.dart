@@ -29,123 +29,180 @@ class _ContactsScreenState extends State<ContactsScreen> {
     final service = context.watch<SafetyService>();
 
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('Trusted Contacts'),
+        title: const Text('Trusted Contacts', style: TextStyle(fontWeight: FontWeight.w700)),
+        centerTitle: true,
+        backgroundColor: Colors.white,
+        elevation: 0,
         leading: IconButton(
           onPressed: () => Navigator.pop(context),
-          icon: const Icon(Icons.arrow_back_ios_rounded),
+          icon: const Icon(Icons.arrow_back_ios_rounded, color: Colors.black87),
         ),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Info card
+            // Simplified Info card
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [AppTheme.accentBlue.withValues(alpha: 0.1), AppTheme.darkCard],
-                ),
+                color: Color(0xFFF8F7FF),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppTheme.accentBlue.withValues(alpha: 0.15)),
               ),
               child: Row(
                 children: [
-                  Icon(Icons.info_outline_rounded, color: AppTheme.accentBlue, size: 20),
-                  const SizedBox(width: 12),
+                  Icon(Icons.shield_outlined, color: AppTheme.primaryPurple, size: 24),
+                  const SizedBox(width: 16),
                   Expanded(
                     child: Text(
-                      'These contacts will be alerted during emergencies and can track your location.',
-                      style: TextStyle(fontSize: 12, color: AppTheme.textSecondary, height: 1.5),
+                      'Trusted contacts are alerted during emergencies and can view your live location.',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.black54,
+                        height: 1.4,
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 24),
-
-            // Contacts list
-            ...service.emergencyContacts.map((contact) => _buildContactCard(contact, service)),
-            const SizedBox(height: 20),
-
-            // Add contact button
-            GestureDetector(
-              onTap: () => _showAddContactSheet(context, service),
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppTheme.primaryPurple.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: AppTheme.primaryPurple.withValues(alpha: 0.2),
-                    style: BorderStyle.solid,
-                  ),
-                ),
-                child: const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.add_circle_outline_rounded, color: AppTheme.primaryPurple, size: 22),
-                    SizedBox(width: 10),
-                    Text(
-                      'Add Trusted Contact',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.primaryPurple,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
             const SizedBox(height: 32),
 
-            // Location sharing section
-            Text('Location Sharing', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Your Circle',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.black87),
+                ),
+                TextButton.icon(
+                  onPressed: () => _showAddContactSheet(context, service),
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('Add New'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppTheme.primaryPurple,
+                    textStyle: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 12),
-            _LocationOption(
+
+            // Contacts list
+            if (service.emergencyContacts.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: Center(
+                  child: Column(
+                    children: [
+                      Icon(Icons.people_outline_rounded, size: 48, color: Colors.grey[300]),
+                      const SizedBox(height: 12),
+                      Text('No contacts added yet', style: TextStyle(color: Colors.grey[500])),
+                    ],
+                  ),
+                ),
+              )
+            else
+              ...service.emergencyContacts.map((contact) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: PremiumContactCard(
+                  name: contact.name,
+                  subtitle: '${contact.phone} • ${contact.relationship}',
+                  isPrimary: contact.isPrimary,
+                  fallbackIcon: contact.isPrimary ? Icons.star_rounded : Icons.person_rounded,
+                  onCallTap: () {},
+                  onDeleteTap: () => service.removeEmergencyContact(contact.id),
+                ),
+              )),
+            
+            const SizedBox(height: 32),
+
+            // ── Simplified Location Sharing Section ──
+            Text(
+              'Location Settings',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: Colors.black87,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Manage how your location is shared.',
+              style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+            ),
+            const SizedBox(height: 20),
+
+            // ── Toggles ──
+            _SimpleToggle(
               title: 'Continuous Tracking',
-              subtitle: 'Always share location with primary contact',
-              isEnabled: true,
-              color: AppTheme.safeGreen,
+              subtitle: 'Send primary contact updates every 10 min',
+              isEnabled: service.continuousTrackingEnabled,
+              hasContacts: service.emergencyContacts.isNotEmpty,
+              onChanged: (v) => service.toggleContinuousTracking(v),
             ),
-            _LocationOption(
+            _SimpleToggle(
               title: 'SOS Auto-Share',
-              subtitle: 'Share with all contacts during emergencies',
-              isEnabled: true,
-              color: AppTheme.dangerRed,
+              subtitle: 'Share location with everyone when SOS is triggered',
+              isEnabled: service.sosAutoShareEnabled,
+              hasContacts: service.emergencyContacts.isNotEmpty,
+              onChanged: (v) => service.toggleSOSAutoShare(v),
             ),
-            _LocationOption(
+            _SimpleToggle(
               title: 'Trip Sharing',
-              subtitle: 'Share during active trip sessions',
-              isEnabled: true,
-              color: AppTheme.accentBlue,
+              subtitle: 'Automatically notify circle when starting a trip',
+              isEnabled: service.tripSharingEnabled,
+              hasContacts: service.emergencyContacts.isNotEmpty,
+              onChanged: (v) => service.toggleTripSharing(v),
             ),
+
+            const SizedBox(height: 32),
+
+            // ── Integrated Share Button ──
+            if (service.emergencyContacts.isNotEmpty)
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () async {
+                    await service.sendLocationLinkToAll(label: '📍 My current location');
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: const Text('Location shared with all contacts'),
+                          backgroundColor: Colors.black87,
+                          behavior: SnackBarBehavior.floating,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.send_rounded, size: 18),
+                  label: const Text('Share Live Location Now'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primaryPurple,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+            
+            const SizedBox(height: 40),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildContactCard(EmergencyContact contact, SafetyService service) {
-    return PremiumContactCard(
-      name: contact.name,
-      subtitle: '${contact.phone} • ${contact.relationship}',
-      isPrimary: contact.isPrimary,
-      fallbackIcon: contact.isPrimary ? Icons.star_rounded : Icons.person_rounded,
-      onCallTap: () {
-        // Implement call logic here
-      },
-      onDeleteTap: () => service.removeEmergencyContact(contact.id),
-    );
-  }
-
   void _showAddContactSheet(BuildContext context, SafetyService service) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppTheme.darkSurface,
+      backgroundColor: Colors.white,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
@@ -154,94 +211,53 @@ class _ContactsScreenState extends State<ContactsScreen> {
         padding: EdgeInsets.only(
           left: 24,
           right: 24,
-          top: 24,
-          bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+          top: 32,
+          bottom: MediaQuery.of(context).viewInsets.bottom + 32,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: AppTheme.textMuted,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
+            Text('Add Contact',
+                style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.black87)),
             const SizedBox(height: 24),
-            Text('Add Trusted Contact', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
-            const SizedBox(height: 20),
-            
-            // Name input
-            Container(
-              decoration: BoxDecoration(
-                color: AppTheme.darkCard,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: TextField(
-                controller: _nameController,
-                style: TextStyle(color: AppTheme.textPrimary),
-                decoration: InputDecoration(
-                  hintText: 'Name',
-                  hintStyle: TextStyle(color: AppTheme.textMuted),
-                  prefixIcon: Icon(Icons.person_rounded, color: AppTheme.textMuted),
-                  border: InputBorder.none,
-                  contentPadding: EdgeInsets.all(16),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            
-            // Phone input
-            Container(
-              decoration: BoxDecoration(
-                color: AppTheme.darkCard,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: TextField(
-                controller: _phoneController,
-                style: TextStyle(color: AppTheme.textPrimary),
-                keyboardType: TextInputType.phone,
-                decoration: InputDecoration(
-                  hintText: 'Phone Number',
-                  hintStyle: TextStyle(color: AppTheme.textMuted),
-                  prefixIcon: Icon(Icons.phone_rounded, color: AppTheme.textMuted),
-                  border: InputBorder.none,
-                  contentPadding: EdgeInsets.all(16),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
 
-            // Relationship
+            // Simple inputs
+            _buildField('Full Name', _nameController, Icons.person_outline),
+            const SizedBox(height: 16),
+            _buildField('Phone Number', _phoneController, Icons.phone_android_outlined, type: TextInputType.phone),
+            const SizedBox(height: 24),
+
+            Text('Relationship', style: TextStyle(fontWeight: FontWeight.w600, color: Colors.grey[700])),
+            const SizedBox(height: 12),
             Wrap(
               spacing: 8,
-              children: ['Family', 'Friend', 'Partner', 'Colleague'].map((rel) {
+              children: ['Family', 'Friend', 'Partner', 'Work'].map((rel) {
                 final isSelected = rel == _selectedRelationship;
-                return GestureDetector(
-                  onTap: () => setState(() => _selectedRelationship = rel),
-                  child: Chip(
-                    label: Text(rel),
-                    backgroundColor: isSelected ? AppTheme.primaryPurple.withValues(alpha: 0.2) : AppTheme.darkCard,
-                    labelStyle: TextStyle(
-                      color: isSelected ? AppTheme.primaryPurple : AppTheme.textSecondary,
-                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                    ),
-                    side: BorderSide(
-                      color: isSelected ? AppTheme.primaryPurple : Colors.white.withValues(alpha: 0.05),
-                    ),
+                return ChoiceChip(
+                  label: Text(rel),
+                  selected: isSelected,
+                  onSelected: (val) {
+                    if (val) setState(() => _selectedRelationship = rel);
+                  },
+                  selectedColor: AppTheme.primaryPurple.withOpacity(0.1),
+                  labelStyle: TextStyle(
+                    color: isSelected ? AppTheme.primaryPurple : Colors.black54,
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
                   ),
+                  side: BorderSide(color: isSelected ? AppTheme.primaryPurple : Colors.grey[300]!),
+                  backgroundColor: Colors.white,
                 );
               }).toList(),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 32),
 
             SizedBox(
               width: double.infinity,
-              height: 50,
+              height: 54,
               child: ElevatedButton(
                 onPressed: () {
                   if (_nameController.text.isNotEmpty && _phoneController.text.isNotEmpty) {
@@ -258,9 +274,11 @@ class _ContactsScreenState extends State<ContactsScreen> {
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppTheme.primaryPurple,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
-                child: const Text('Add Contact', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.white)),
+                child: const Text('Save Contact',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.white)),
               ),
             ),
           ],
@@ -268,49 +286,71 @@ class _ContactsScreenState extends State<ContactsScreen> {
       ),
     );
   }
+
+  Widget _buildField(String label, TextEditingController controller, IconData icon, {TextInputType type = TextInputType.text}) {
+    return TextField(
+      controller: controller,
+      keyboardType: type,
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: Icon(icon, size: 20, color: Colors.grey[500]),
+        labelStyle: TextStyle(color: Colors.grey[600]),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.grey[200]!),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: AppTheme.primaryPurple),
+        ),
+        filled: true,
+        fillColor: Colors.grey[50],
+      ),
+    );
+  }
 }
 
-class _LocationOption extends StatelessWidget {
+class _SimpleToggle extends StatelessWidget {
   final String title;
   final String subtitle;
   final bool isEnabled;
-  final Color color;
+  final bool hasContacts;
+  final ValueChanged<bool> onChanged;
 
-  const _LocationOption({
+  const _SimpleToggle({
     required this.title,
     required this.subtitle,
     required this.isEnabled,
-    required this.color,
+    required this.hasContacts,
+    required this.onChanged,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
+      margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: AppTheme.darkCard,
-        borderRadius: BorderRadius.circular(14),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[200]!),
       ),
-      child: Row(
-        children: [
-          Icon(Icons.location_on_rounded, color: color, size: 20),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.textPrimary)),
-                Text(subtitle, style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
-              ],
-            ),
+      child: SwitchListTile(
+        title: Text(
+          title,
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            color: hasContacts ? Colors.black87 : Colors.grey[400],
           ),
-          Switch(
-            value: isEnabled,
-            onChanged: (v) {},
-            activeTrackColor: color,
-          ),
-        ],
+        ),
+        subtitle: Text(
+          hasContacts ? subtitle : 'Add a contact to enable',
+          style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+        ),
+        value: isEnabled && hasContacts,
+        onChanged: hasContacts ? onChanged : null,
+        activeColor: AppTheme.primaryPurple,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       ),
     );
   }

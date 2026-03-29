@@ -4,8 +4,8 @@ import 'api_config.dart';
 
 class BlockchainService extends ChangeNotifier {
   final Dio _dio = Dio(BaseOptions(
-    connectTimeout: const Duration(seconds: 60),
-    receiveTimeout: const Duration(seconds: 60),
+    connectTimeout: const Duration(seconds: 180),
+    receiveTimeout: const Duration(seconds: 180),
   ));
   
   static String get _baseUrl => ApiConfig.blockchainUrl;
